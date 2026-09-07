@@ -1,0 +1,25 @@
+# 环境 / 密钥
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 前端
+node_modules/
+dist/
+.vite/
+
+# 大文件数据产物（由 scripts/ 重新生成，不入库）
+data/processed/*.csv
+data/processed/*.db
+data/raw/*.xlsx
+*.tmp
+
+# 日志与导出
+*.log
