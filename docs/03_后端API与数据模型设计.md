@@ -68,6 +68,7 @@ app/backend/
 | POST | /api/reports/{id}/confirm | **是** | 草稿→已确认（version+1） |
 | POST | /api/reports/{id}/archive | **是** | 已确认→归档 |
 | DELETE | /api/reports/{id} | **是** | 删除（仅本人） |
+| GET | /api/reports/{id}/export?fmt=docx\|markdown | **是** | 导出 Word(docx)/Markdown；drafted/confirmed/archived 可导出，其余 400 |
 
 鉴权：除 health/register/login 外均需在 `Authorization: Bearer <token>` 携带 JWT；越权访问他人报告返回 404（不暴露存在性）。
 
@@ -78,7 +79,7 @@ app/backend/
 python -m uvicorn app.backend.main:app --app-dir D:/电商 --host 127.0.0.1 --port 8000 --reload
 # 首次启动自动创建 app.db 并写入种子账号 demo / demo1234（生产请改密或删除）
 # 测试（独立测试库，不污染开发数据）
-python -m pytest app/backend/test_api.py -q
+python -m pytest app/backend/test_api.py app/backend/test_export.py -q
 ```
 
 ## 5. 已知约束 / 后续

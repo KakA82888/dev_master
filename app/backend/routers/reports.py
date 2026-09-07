@@ -1,11 +1,13 @@
-"""报告路由：生成、预览、确认回写、归档、历史、删除。"""
+"""报告路由：生成、预览、确认回写、归档、历史、删除、导出(Markdown/Word)。"""
 from datetime import datetime, timezone
+from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..exporters import export_docx, export_markdown, sanitize_filename
 from ..generator import run_generation
 from ..models import (
     Report,
@@ -117,3 +119,44 @@ def delete(
     rep = _get_owned(report_id, db, current_user)
     db.delete(rep)
     db.commit()
+
+
+@router.get("/{report_id}/export")
+def export_report(
+    report_id: int,
+    fmt: str = Query("docx", pattern="^(docx|markdown|md)$", description="导出格式"),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """导出报告：format=docx（默认）或 markdown。仅 drafted/confirmed/archived 可导出。"""
+    rep = _get_owned(report_id, db, current_user)
+    if rep.status not in (STATUS_DRAFTED, STATUS_CONFIRMED, STATUS_ARCHIVED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"报告状态 {rep.status} 不可导出（需 drafted/confirmed/archived）",
+        )
+    if not rep.markdown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="报告内容为空，无法导出",
+        )
+    if fmt in ("markdown", "md"):
+        data = export_markdown(rep).encode("utf-8")
+        media_type = "text/markdown; charset=utf-8"
+        ext = "md"
+    else:
+        data = export_docx(rep)
+        media_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        ext = "docx"
+    name = sanitize_filename(rep.title or rep.instruction, f"report-{rep.id}") + "." + ext
+    ascii_name = name.encode("ascii", "ignore").decode() or "report." + ext
+    disposition = (
+        f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(name)}'
+    )
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": disposition},
+    )
