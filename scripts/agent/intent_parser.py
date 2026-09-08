@@ -8,6 +8,7 @@
 - 报告类型：显式"日报/周报/月报"优先；未指定时按区间跨度推断。
 - 市场：中文国名 → Country 代码映射；"全部/所有/总体" → None（全市场）。
 - 日期：支持相对词、绝对年月日、中文区间，纯正则+datetime，不依赖不稳定的解析库。
+- 安全：解析前置安全网关（guard.check），拦截注入/越权/越界/无效日期。
 """
 from __future__ import annotations
 
@@ -38,6 +39,10 @@ COUNTRY_MAP = {
 ALL_MARKETS = ["全部", "所有", "总体", "全球", "整体", "汇总", "不分国家", "不分地区"]
 
 
+class InvalidDateError(ValueError):
+    """指令中出现语法合法但语义不存在的日期（如 2011-02-29、2011年13月）。"""
+
+
 class Intent(BaseModel):
     report_type: str          # daily | weekly | monthly
     start: str                # YYYY-MM-DD
@@ -46,6 +51,7 @@ class Intent(BaseModel):
     raw: str
     need_clarify: bool = False
     message: str = ""
+    blocked: str | None = None   # 被安全网关拦截时的原因码
 
 
 # ---------- 基础日期工具 ----------
@@ -54,7 +60,16 @@ def week_range(d: date) -> tuple[date, date]:
     return monday, monday + timedelta(days=6)
 
 
+def _mkdate(y: int, m: int, d: int) -> date:
+    try:
+        return date(y, m, d)
+    except ValueError as ex:
+        raise InvalidDateError(f"{y}-{m:02d}-{d:02d} 不是有效日期") from ex
+
+
 def month_range(y: int, m: int) -> tuple[date, date]:
+    if not 1 <= m <= 12:
+        raise InvalidDateError(f"{y}年{m}月 不是有效月份")
     first = date(y, m, 1)
     nxt = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
     return first, nxt - timedelta(days=1)
@@ -71,19 +86,30 @@ def _is_full_month(s: date, e: date) -> bool:
 
 # ---------- 单日期解析 ----------
 def _resolve_single_date(seg: str, anchor: date) -> date | None:
+    """从片段中解析单个日期；无日期返回 None。含日号的绝对日期优先。"""
     m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})[日号]?", seg)
     if m:
-        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", seg)
+        return _mkdate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    m = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", seg)
     if m:
-        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    m = re.search(r"(\d{4})/(\d{1,2})/(\d{1,2})", seg)
-    if m:
-        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        return _mkdate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     m = re.search(r"(\d{1,2})月(\d{1,2})[日号]", seg)
     if m:
-        return date(anchor.year, int(m.group(1)), int(m.group(2)))
+        return _mkdate(anchor.year, int(m.group(1)), int(m.group(2)))
+    # 省略"日/号"的口语写法，如"11月22"
+    m = re.search(r"(?<!\d)(\d{1,2})月(\d{1,2})(?!\d)", seg)
+    if m:
+        return _mkdate(anchor.year, int(m.group(1)), int(m.group(2)))
     return None
+
+
+def _has_explicit_day(seg: str) -> bool:
+    """片段中是否含"带日号"的绝对日期（用于区分"2011年11月"与"2011年11月22日"）。"""
+    return bool(
+        re.search(r"\d{4}年\d{1,2}月\d{1,2}[日号]?", seg)
+        or re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", seg)
+        or re.search(r"\d{1,2}月\d{1,2}[日号]", seg)
+    )
 
 
 # ---------- 维度提取 ----------
@@ -112,15 +138,26 @@ def detect_country(text: str) -> str | None:
 
 
 def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, date]:
+    # 0) 绝对日期（带日号）优先于整月规则，避免"2011年11月22日"被误判为整月
+    if _has_explicit_day(text):
+        sd = _resolve_single_date(text, anchor)
+        if sd and not re.search(r"(到|至|~|—|–)", text):
+            return (sd, sd)
+
     # 1) 显式区间：到 / 至 / ~ / —
     sep = re.search(r"(到|至|~|—|–)", text)
     if sep:
         s = _resolve_single_date(text[: sep.start()], anchor)
         e = _resolve_single_date(text[sep.end():], anchor)
-        if s and not e:  # 右端仅"D日"，借用左端年月
-            m = re.search(r"(\d{1,2})[日号]", text[sep.end():])
+        if s and not e:  # 右端仅给出"D日"或裸数字，借用左端年月
+            right = text[sep.end():]
+            m = re.search(r"(\d{1,2})[日号]", right)
             if m:
-                e = date(s.year, s.month, int(m.group(1)))
+                e = _mkdate(s.year, s.month, int(m.group(1)))
+            else:
+                m = re.match(r"\s*(\d{1,2})\s*$", right)
+                if m:
+                    e = _mkdate(s.year, s.month, int(m.group(1)))
         if s and e:
             return (min(s, e), max(s, e))
     # 2) 整月：YYYY年MM月 或 YYYY-MM（非完整日期）
@@ -160,13 +197,33 @@ def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, dat
     return (d, d)
 
 
+def _expand_to_period(rt: str, s: date, e: date) -> tuple[date, date]:
+    """显式报告类型 + 单日区间时，把单日扩展为该类型对应的完整周期。"""
+    if (e - s).days != 0:
+        return (s, e)
+    if rt == "weekly":
+        return week_range(s)
+    if rt == "monthly":
+        return month_range(s.year, s.month)
+    return (s, e)
+
+
 # ---------- 主入口 ----------
 def parse(text: str, anchor: date | None = None) -> Intent:
     anchor = anchor or ANCHOR
     text = text.strip()
     rt = detect_report_type(text)
     country = detect_country(text)
-    start, end = parse_date_range(text, rt, anchor)
+    try:
+        start, end = parse_date_range(text, rt, anchor)
+    except InvalidDateError as ex:
+        return Intent(
+            report_type=rt or "daily", start=anchor.isoformat(), end=anchor.isoformat(),
+            country=country, raw=text, need_clarify=True,
+            message=f"指令中的日期无效：{ex}", blocked="invalid_date",
+        )
+    if rt is not None:
+        start, end = _expand_to_period(rt, start, end)
     # 未指定报告类型时按区间跨度推断
     if rt is None:
         span = (end - start).days + 1
@@ -181,3 +238,25 @@ def parse(text: str, anchor: date | None = None) -> Intent:
         report_type=rt, start=start.isoformat(), end=end.isoformat(),
         country=country, raw=text, need_clarify=False, message=msg,
     )
+
+
+def parse_safe(text: str, anchor: date | None = None) -> Intent:
+    """解析 + 安全网关。被拦截时返回 need_clarify=True 且 blocked=<原因码>。"""
+    from scripts.agent.guard import check as guard_check  # 局部导入避免循环依赖
+
+    ok, code, reason = guard_check(text)
+    if not ok:
+        a = anchor or ANCHOR
+        return Intent(
+            report_type="daily", start=a.isoformat(), end=a.isoformat(),
+            country=None, raw=text.strip(), need_clarify=True,
+            message=reason, blocked=code,
+        )
+    it = parse(text, anchor)
+    if it.blocked is None:  # 未被无效日期拦截时，再做一次数据范围校验
+        ok2, code2, reason2 = guard_check(it.raw, it.start, it.end)
+        if not ok2:
+            it.need_clarify = True
+            it.blocked = code2
+            it.message = reason2
+    return it

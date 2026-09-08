@@ -1,0 +1,137 @@
+{
+  "metrics": {
+    "pass": true,
+    "worst_metric_diff": 7.275957614183426e-12,
+    "days": [
+      {
+        "day": "2009-12-01",
+        "label": "data_start_normal",
+        "max_diff": 7.275957614183426e-12,
+        "detail": {
+          "gmv": 7.275957614183426e-12,
+          "valid_orders": 0.0,
+          "all_orders": 0.0,
+          "aov": 5.684341886080802e-14,
+          "conversion_rate": 0.0,
+          "refund_amt_abs": 2.2737367544323206e-13,
+          "refund_orders": 0.0,
+          "refund_rate_amount": 6.938893903907228e-18,
+          "refund_rate_order": 0.0
+        }
+      },
+      {
+        "day": "2010-11-22",
+        "label": "normal_weekday",
+        "max_diff": 7.275957614183426e-12,
+        "detail": {
+          "gmv": 7.275957614183426e-12,
+          "valid_orders": 0.0,
+          "all_orders": 0.0,
+          "aov": 5.684341886080802e-14,
+          "conversion_rate": 0.0,
+          "refund_amt_abs": 0.0,
+          "refund_orders": 0.0,
+          "refund_rate_amount": 8.673617379884035e-19,
+          "refund_rate_order": 0.0
+        }
+      },
+      {
+        "day": "2010-11-27",
+        "label": "weekend",
+        "max_diff": 0.0,
+        "detail": {
+          "gmv": 0.0,
+          "valid_orders": 0.0,
+          "all_orders": 0.0,
+          "aov": 0.0,
+          "conversion_rate": 0.0,
+          "refund_amt_abs": 0.0,
+          "refund_orders": 0.0,
+          "refund_rate_amount": 0.0,
+          "refund_rate_order": 0.0
+        }
+      },
+      {
+        "day": "2010-11-29",
+        "label": "promo_peak_cyber_monday",
+        "max_diff": 2.842170943040401e-14,
+        "detail": {
+          "gmv": 0.0,
+          "valid_orders": 0.0,
+          "all_orders": 0.0,
+          "aov": 0.0,
+          "conversion_rate": 0.0,
+          "refund_amt_abs": 2.842170943040401e-14,
+          "refund_orders": 0.0,
+          "refund_rate_amount": 4.336808689942018e-19,
+          "refund_rate_order": 0.0
+        }
+      },
+      {
+        "day": "2010-11-30",
+        "label": "month_end",
+        "max_diff": 7.275957614183426e-12,
+        "detail": {
+          "gmv": 7.275957614183426e-12,
+          "valid_orders": 0.0,
+          "all_orders": 0.0,
+          "aov": 5.684341886080802e-14,
+          "conversion_rate": 0.0,
+          "refund_amt_abs": 0.0,
+          "refund_orders": 0.0,
+          "refund_rate_amount": 1.3877787807814457e-17,
+          "refund_rate_order": 0.0
+        }
+      },
+      {
+        "day": "2010-12-01",
+        "label": "month_start",
+        "max_diff": 0.0,
+        "detail": {
+          "gmv": 0.0,
+          "valid_orders": 0.0,
+          "all_orders": 0.0,
+          "aov": 0.0,
+          "conversion_rate": 0.0,
+          "refund_amt_abs": 0.0,
+          "refund_orders": 0.0,
+          "refund_rate_amount": 0.0,
+          "refund_rate_order": 0.0
+        }
+      },
+      {
+        "day": "2011-06-15",
+        "label": "mid_multi_country",
+        "max_diff": 7.275957614183426e-12,
+        "detail": {
+          "gmv": 7.275957614183426e-12,
+          "valid_orders": 0.0,
+          "all_orders": 0.0,
+          "aov": 1.1368683772161603e-13,
+          "conversion_rate": 0.0,
+          "refund_amt_abs": 0.0,
+          "refund_orders": 0.0,
+          "refund_rate_amount": 6.938893903907228e-18,
+          "refund_rate_order": 0.0
+        }
+      }
+    ],
+    "amount_assertions": {
+      "daily_agg_gmv_sum": 19642692.15,
+      "sql_total_gmv": 19642692.15,
+      "gmv_cross_diff": 0.0,
+      "gmv_vs_baseline_diff": 0.0,
+      "gmv_baseline": 19642692.15
+    },
+    "accuracy_estimate": 100.0
+  },
+  "performance": {
+    "runs": 5,
+    "failed": 0,
+    "mean_sec": 0.199,
+    "p95_sec": 0.026,
+    "max_sec": 0.951,
+    "sm3_pass": true,
+    "sm5_pass": true
+  }
+}

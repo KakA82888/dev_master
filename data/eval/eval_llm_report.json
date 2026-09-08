@@ -1,0 +1,370 @@
+{
+  "summary": {
+    "reject_blocked": "12/12",
+    "llm_accuracy": "15/15",
+    "rule_accuracy": "15/15",
+    "full_chain_ok": true
+  },
+  "details": [
+    {
+      "id": "A01",
+      "instruction": "生成昨日日报",
+      "golden": [
+        "daily",
+        "2011-12-08",
+        "2011-12-08",
+        "ALL"
+      ],
+      "rule": [
+        "daily",
+        "2011-12-08",
+        "2011-12-08",
+        "ALL"
+      ],
+      "llm": [
+        "daily",
+        "2011-12-08",
+        "2011-12-08",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "A03",
+      "instruction": "帮我做前天的销售日报",
+      "golden": [
+        "daily",
+        "2011-12-07",
+        "2011-12-07",
+        "ALL"
+      ],
+      "rule": [
+        "daily",
+        "2011-12-07",
+        "2011-12-07",
+        "ALL"
+      ],
+      "llm": [
+        "daily",
+        "2011-12-07",
+        "2011-12-07",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "A05",
+      "instruction": "来一份昨天德国的日报",
+      "golden": [
+        "daily",
+        "2011-12-08",
+        "2011-12-08",
+        "Germany"
+      ],
+      "rule": [
+        "daily",
+        "2011-12-08",
+        "2011-12-08",
+        "Germany"
+      ],
+      "llm": [
+        "daily",
+        "2011-12-08",
+        "2011-12-08",
+        "Germany"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "B01",
+      "instruction": "生成上周周报",
+      "golden": [
+        "weekly",
+        "2011-11-28",
+        "2011-12-04",
+        "ALL"
+      ],
+      "rule": [
+        "weekly",
+        "2011-11-28",
+        "2011-12-04",
+        "ALL"
+      ],
+      "llm": [
+        "weekly",
+        "2011-11-28",
+        "2011-12-04",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "B03",
+      "instruction": "本周周报",
+      "golden": [
+        "weekly",
+        "2011-12-05",
+        "2011-12-11",
+        "ALL"
+      ],
+      "rule": [
+        "weekly",
+        "2011-12-05",
+        "2011-12-11",
+        "ALL"
+      ],
+      "llm": [
+        "weekly",
+        "2011-12-05",
+        "2011-12-11",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "B05",
+      "instruction": "上周德国周报",
+      "golden": [
+        "weekly",
+        "2011-11-28",
+        "2011-12-04",
+        "Germany"
+      ],
+      "rule": [
+        "weekly",
+        "2011-11-28",
+        "2011-12-04",
+        "Germany"
+      ],
+      "llm": [
+        "weekly",
+        "2011-11-28",
+        "2011-12-04",
+        "Germany"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "C01",
+      "instruction": "生成上月月报",
+      "golden": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "ALL"
+      ],
+      "rule": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "ALL"
+      ],
+      "llm": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "C03",
+      "instruction": "本月月报",
+      "golden": [
+        "monthly",
+        "2011-12-01",
+        "2011-12-31",
+        "ALL"
+      ],
+      "rule": [
+        "monthly",
+        "2011-12-01",
+        "2011-12-31",
+        "ALL"
+      ],
+      "llm": [
+        "monthly",
+        "2011-12-01",
+        "2011-12-31",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "C05",
+      "instruction": "上月全市场月报",
+      "golden": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "ALL"
+      ],
+      "rule": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "ALL"
+      ],
+      "llm": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "D02",
+      "instruction": "生成2010年11月22日到28日的周报",
+      "golden": [
+        "weekly",
+        "2010-11-22",
+        "2010-11-28",
+        "ALL"
+      ],
+      "rule": [
+        "weekly",
+        "2010-11-22",
+        "2010-11-28",
+        "ALL"
+      ],
+      "llm": [
+        "weekly",
+        "2010-11-22",
+        "2010-11-28",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "D04",
+      "instruction": "2011-09-15 日报",
+      "golden": [
+        "daily",
+        "2011-09-15",
+        "2011-09-15",
+        "ALL"
+      ],
+      "rule": [
+        "daily",
+        "2011-09-15",
+        "2011-09-15",
+        "ALL"
+      ],
+      "llm": [
+        "daily",
+        "2011-09-15",
+        "2011-09-15",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "D06",
+      "instruction": "2011年2月1日至2011年2月28日法国月报",
+      "golden": [
+        "monthly",
+        "2011-02-01",
+        "2011-02-28",
+        "France"
+      ],
+      "rule": [
+        "monthly",
+        "2011-02-01",
+        "2011-02-28",
+        "France"
+      ],
+      "llm": [
+        "monthly",
+        "2011-02-01",
+        "2011-02-28",
+        "France"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "D08",
+      "instruction": "2011年6月全市场月报",
+      "golden": [
+        "monthly",
+        "2011-06-01",
+        "2011-06-30",
+        "ALL"
+      ],
+      "rule": [
+        "monthly",
+        "2011-06-01",
+        "2011-06-30",
+        "ALL"
+      ],
+      "llm": [
+        "monthly",
+        "2011-06-01",
+        "2011-06-30",
+        "ALL"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "E02",
+      "instruction": "澳大利亚上月月报",
+      "golden": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "Australia"
+      ],
+      "rule": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "Australia"
+      ],
+      "llm": [
+        "monthly",
+        "2011-11-01",
+        "2011-11-30",
+        "Australia"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    },
+    {
+      "id": "E04",
+      "instruction": "中国香港本周周报",
+      "golden": [
+        "weekly",
+        "2011-12-05",
+        "2011-12-11",
+        "Hong Kong"
+      ],
+      "rule": [
+        "weekly",
+        "2011-12-05",
+        "2011-12-11",
+        "Hong Kong"
+      ],
+      "llm": [
+        "weekly",
+        "2011-12-05",
+        "2011-12-11",
+        "Hong Kong"
+      ],
+      "rule_ok": true,
+      "llm_ok": true
+    }
+  ]
+}

@@ -16,9 +16,10 @@ from typing import Optional, TypedDict
 
 from langgraph.graph import StateGraph, START, END
 
-from intent_parser import parse, Intent
+from intent_parser import parse, parse_safe, Intent
 from query_executor import execute, MetricsBundle
 from report_builder import build_report
+from llm_client import llm_parse_intent
 
 
 class AgentState(TypedDict):
@@ -42,22 +43,30 @@ def _resolve_anchor(state: AgentState) -> Optional[date]:
 
 
 def _llm_plan(instruction: str, anchor: Optional[date]) -> Intent:
-    """D8 接入：调用大模型解析自然语言意图。当前为占位，未启用 LLM_MODE 时不会被调用。"""
-    raise NotImplementedError("LLM 解析通道将在 D8 接入（base_url + api_key）。")
+    """D8 接入：调用大模型解析自然语言意图（LLM_MODE=llm 且已配置 Key 时由 _plan 调用）。"""
+    return llm_parse_intent(instruction, anchor)
 
 
 def build_app(con: sqlite3.Connection):
     def _plan(state: AgentState):
         try:
             anchor = _resolve_anchor(state)
+            # 安全网关始终优先（确定性拦截注入/越权/伪造/越界/SQLi）
+            safe = parse_safe(state["instruction"], anchor)
+            if safe.need_clarify:
+                # 被安全网关拦截：不出报，直接把原因返回给调用方
+                return {"error": safe.message, "intent": safe.model_dump(),
+                        "notes": [safe.message]}
+            # 网关放行后再选通道
             if os.getenv("LLM_MODE") == "llm":
                 try:
                     intent = _llm_plan(state["instruction"], anchor)
                     return {"intent": intent.model_dump(),
                             "notes": [intent.message + "（LLM 解析）"]}
-                except Exception:
-                    pass  # 回退规则通道
-            intent = parse(state["instruction"], anchor)
+                except Exception as e:
+                    # LLM 不可用/失败 → 回退规则通道，保证可用性
+                    state["notes"].append(f"LLM 解析失败，已回退规则通道：{e}")
+            intent = safe
             return {"intent": intent.model_dump(), "notes": [intent.message]}
         except Exception as e:
             return {"error": f"意图解析失败：{e}"}
