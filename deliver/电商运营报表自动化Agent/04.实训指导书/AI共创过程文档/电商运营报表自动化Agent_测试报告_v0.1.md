@@ -1,0 +1,119 @@
+# 测试报告 v0.1 —— 环境基线与数据基线（S0 产出）
+
+| 项 | 内容 |
+|---|---|
+| 版本 / 日期 | v0.1 / 2026-09-07 |
+| 阶段 | S0 启动与基线锁定 |
+| 用途 | 锁定"环境可开发 + 数据可复现"的基线；后续所有对账以此为参照 |
+
+## 1. 环境基线
+
+| 组件 | 版本 / 路径 | 状态 |
+|---|---|---|
+| Python（托管 venv） | 3.13.12，`C:\Users\12247\.workbuddy\binaries\python\envs\default\Scripts\python.exe` | 就绪 |
+| 已装 | pandas 3.0.5、openpyxl 3.1.5、ucimlrepo | 就绪 |
+| Node | 22.22.2，`...\binaries\node\versions\22.22.2\node.exe` | 就绪 |
+| Git | 2.55.0 | 仓库已初始化，首次提交 `f81227b`（提交身份为占位 `ReportAgentDev`，需你改为本人） |
+| 数据库 | sqlite3（stdlib），`data/processed/report_agent.db` | 就绪 |
+| **依赖安装（S0 已完成）** | langgraph 1.2.11 / langchain-openai 1.6.0 / openai 3.8.0 / fastapi 0.141.1 / uvicorn 0.52.4 / python-jose 3.5.0 / passlib 1.7.4 / apscheduler 3.11.3 / pytest 9.1.1 / httpx 0.28.1 / jinja2 3.1.6 / python-docx 1.2.0 / docxtpl 0.20.2 / dateparser 1.4.3 / pydantic 2.13.5 / python-dotenv / tenacity | **导入冒烟全部通过**（18 个模块 import 无异常） |
+| 降级预案 | LangGraph 已装成功，无需自研状态机；无 LLM Key 时仍走规则式解析 + 模板化结论 | 已备案 |
+
+## 2. 数据基线（唯一事实表 `sales_detail`）
+
+| 基线项 | 数值 | 校验方式 |
+|---|---|---|
+| 行数 | 1,033,031 | `SELECT COUNT(*)` |
+| 时间范围 | 2009-12-01 ~ 2011-12-09 | MIN/MAX(order_date) |
+| 全部订单数 | 53,623 | COUNT(DISTINCT order_id) |
+| 有效订单数（is_refund=0 且 is_product=1） | 41,353 | COUNT(DISTINCT order_id) |
+| 退款订单数 | 11,685 | COUNT(DISTINCT order_id WHERE is_refund=1) |
+| 市场/国家数 | 43 | COUNT(DISTINCT country) |
+| GMV（正式口径：有效商品） | **19,642,692.15 GBP** | SUM(amount) WHERE is_refund=0 AND is_product=1 |
+| 金额·含退款红冲 | 19,014,209.82 GBP | SUM(amount) 全量 |
+| 金额·剔除退款 | 20,476,260.43 GBP | SUM(amount) WHERE is_refund=0 |
+| 退款行金额合计 | -1,462,050.61 GBP | SUM(amount) WHERE is_refund=1 |
+
+**对账校验**：19,014,209.82 − (−1,462,050.61) = 20,476,260.43 ✅ 与"剔除退款"口径一致，三口径关系闭合。
+
+## 3. 样例区间基线（2010-11-22 ~ 2010-11-28，促销周）
+
+| 指标 | 数值 | 口径 |
+|---|---|---|
+| GMV | 296,087.91 GBP | is_refund=0 且 is_product=1 |
+| 有效订单数 | 691 | 同上，去重 order_id |
+| 全部订单数 | 854 | 区间内全部去重 order_id |
+| 客单价 | 428.49 GBP | GMV / 有效订单数 |
+| 订单转化率 | 80.91% | 有效订单 / 全部订单 |
+| 退款金额 | -10,389.88 GBP | is_refund=1 |
+| 退款金额率 | 3.51% | 退款金额 / GMV |
+| 退款订单率 | 18.38% | 退款订单数 157 / 全部订单 854 |
+
+> 该样例将作为 D2 metrics 模块与 D3 自动化双轨对账的固定回归基准（写入 `data/eval/reference_auto.json`）。
+
+## 4. 风险与备注
+
+- 样例周有效订单数由早前记录的 697 校正为 **691**（口径统一为 is_refund=0 且 is_product=1），客单价随之由 424.80 校正为 428.49；后续一律以本文档口径为准。
+- 数据止于 2011-12-09，涉及"本月/最新"的指令需提示数据未更新，不得推测。
+- 沙箱限制：禁止直接删除文件，重建表用 `DROP TABLE IF EXISTS`。
+
+---
+
+## 5. S1 指标内核验证结果（2026-09-07）
+
+| 验证项 | 结果 | 结论 |
+|---|---|---|
+| 指标口径文档 | `docs/01_指标口径与数据字典_v1.0.md`（G1 口径门已确认） | ✅ 作为全项目唯一口径基线 |
+| metrics 模块 | `scripts/metrics/`：indicators（9 指标纯函数）/ aggregates（daily_agg 预聚合 + 周期聚合 + 环比工具）/ anomaly（阈值表驱动预警） | ✅ 纯函数、可单测 |
+| 自动化双轨对账 | `scripts/qa/cross_check.py`：pandas 路径 vs 纯 SQL 路径互验 | ✅ 7 特征日差异全部 = 0.0000 |
+| 全量金额断言 | daily_agg 各分子之和 = sales_detail 实时聚合；GMV 总计 = 19,642,692.15 | ✅ 误差 0.0；退款对账误差 0.0 |
+| 参考结果集 | `data/eval/reference_auto.json`（7 特征日 golden，可一键回归） | ✅ 已生成 |
+| 单元测试 | `scripts/metrics/test_metrics.py`（基线 + daily_agg 一致性 + 环比 + 双轨） | ✅ 4 passed |
+
+**双轨对账输出（节选）**：2009-12-01 / 2010-11-22 / 2010-11-27 / 2010-11-29 / 2010-11-30 / 2010-12-01 / 2011-06-15 七个特征日，pandas 与 SQL 两路指标最大差异均为 0.0000；GMV 对账 `gmv_vs_baseline_diff = 0.0`。
+
+> 说明：本项目的"≥99% 指标准确率"以**自动化双轨对账 + 全量金额断言**为证据（零人力、可复现、可现场复算），替代任务书原"人工核算"方案（已于 09-07 经你确认取消）。
+
+## 6. S2 Agent 编排与报告生成验证结果（2026-09-07）
+
+| 验证项 | 结果 | 结论 |
+|---|---|---|
+| 意图解析 | `scripts/agent/intent_parser.py`：相对/绝对/中文区间 + 43 国市场映射 + 报告类型推断 | ✅ 4 意图单测 passed |
+| 指标编排 | `scripts/agent/query_executor.py`：当期/上期/环比/异常/逐日明细 | ✅ 调 S1 模块，无重复实现 |
+| LangGraph 编排 | `scripts/agent/orchestrator.py`：plan→execute→reflect→build 状态机 | ✅ 端到端 3 例 passed |
+| 报告生成 | `scripts/agent/report_builder.py`：Markdown 日报/周报/月报 | ✅ 样例 3 份生成成功 |
+| 双通道设计 | 规则通道默认；`LLM_MODE=llm` 时优先 LLM，失败回退规则 | ✅ 无 Key 即可交付 |
+| 端到端测试 | `scripts/agent/test_agent.py` | ✅ **7 passed** |
+
+**样例报告**：`docs/样例报告/` 下 3 份（上周德国周报 / 2010-11-22~28 日报 / 本月全市场月报）。
+
+**修复记录**：① 分离的"月""报"误判已修（仅识别连续"月报/周报/日报"）；② 报告标题多"报"字已修；③ 日报补全 0 销售日，保证区间完整。
+
+## 7. S3 后端 API 与数据模型验证结果（2026-09-07）
+
+| 验证项 | 结果 | 结论 |
+|---|---|---|
+| 后端脚手架 | `app/backend/`：config/db/models/schemas/main，独立应用状态库 `data/processed/app.db` | ✅ 与分析库隔离 |
+| 鉴权 | JWT 注册/登录、bcrypt 哈希、Bearer 依赖 `get_current_user` | ✅ |
+| 报告生成 API | `POST /api/reports/generate`：立即返回 id（pending），后台 `orchestrator.run` 落库 | ✅ 异步；`?sync=true` 同步 |
+| 预览/确认/归档/历史 | `GET /{id}`、`POST /{id}/confirm`（version+1）、`archive`、`GET /`（倒序列表）、`DELETE` | ✅ 状态机闭环 |
+| 越权隔离 | 访问他人报告返回 404（不暴露存在性） | ✅ |
+| 接口测试 | `app/backend/test_api.py`（TestClient，独立测试库 `app_test.db`） | ✅ **6 passed** |
+| 真实 HTTP 冒烟 | uvicorn 启动 → demo 登录拿 token → 异步生成（pending→drafted）→ 确认（confirmed v2）→ 列表 | ✅ 全链路通过 |
+
+**踩坑修复**：① `bcrypt 5.0.0` 与 `passlib` 不兼容 → 降级 `bcrypt==4.0.1`；② FastAPI 将 SQLAlchemy `User` ORM 误识别为查询参数（多出 `local_kw`）→ `get_current_user` 改为返回 Pydantic `CurrentUser`；③ `@app.on_event` 弃用告警 → 改用 `lifespan`；④ 测试与开发共用 `app.db` 相互污染 → 测试库经 `APP_DB_PATH` 环境变量隔离为 `app_test.db`。
+
+**运行命令**：`python -m uvicorn app.backend.main:app --app-dir D:/电商 --port 8000`；种子账号 `demo / demo1234`（生产请改密）。
+
+## 8. S5 报告导出（Markdown + Word）验证结果（2026-09-07）
+
+| 验证项 | 结果 | 结论 |
+|---|---|---|
+| 导出服务 | `app/backend/exporters.py`：`export_markdown`（原样）+ `export_docx`（markdown 结构化渲染 docx：标题/引用/表格/列表/行内加粗） | ✅ 内容与预览同源 |
+| 导出 API | `GET /api/reports/{id}/export?fmt=docx\|markdown`：本人报告 + 状态守卫（drafted/confirmed/archived 可导出，其余 400）+ 文件名 sanitize + `filename*=UTF-8''` | ✅ |
+| Word 有效性 | docx 字节 `PK` 魔数；python-docx 重新打开文本含 GMV/金额/日期，与预览一致 | ✅ |
+| 样例 docx | `docs/样例报告/样例_2010年11月22-28日报.docx`（37,990 B） | ✅ 可正常生成 |
+| 导出测试 | `app/backend/test_export.py`：401 未鉴权 / 404 不存在与越权 / markdown 内容断言 / docx PK+文本断言 / pending 态 400 | ✅ **6 passed** |
+| 全量回归 | `test_export.py + test_api.py` | ✅ **12 passed**，无回归 |
+
+**技术取舍记录（docxtpl vs python-docx）**：任务书拍板"docxtpl 优先、冲突则 python-docx"；实测 docxtpl(0.20.2) 与 python-docx(1.2.0) **无版本冲突**，但其行级 Jinja 表格模板（`{%tr %}`）在「核心指标 9 行 + 逐日明细 7~31 行的动态表格」场景易错。工程结论：**数据报表导出采用 python-docx 程序化排版**（内容同源于 markdown 预览，可断言一致）；docxtpl 保留用于「无动态表格」的正式模板文档（封面/说明页）场景。
+

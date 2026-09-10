@@ -1,0 +1,110 @@
+{
+  "gmv_total_baseline": 19642692.15,
+  "feature_days": [
+    {
+      "day": "2009-12-01",
+      "label": "data_start_normal",
+      "metrics": {
+        "gmv": 52429.13,
+        "valid_orders": 118,
+        "all_orders": 166,
+        "aov": 444.3146610169491,
+        "conversion_rate": 0.7108433734939759,
+        "refund_amt_abs": 1340.47,
+        "refund_orders": 46,
+        "refund_rate_amount": 0.025567275291426734,
+        "refund_rate_order": 0.27710843373493976
+      }
+    },
+    {
+      "day": "2010-11-22",
+      "label": "normal_weekday",
+      "metrics": {
+        "gmv": 41610.02,
+        "valid_orders": 94,
+        "all_orders": 105,
+        "aov": 442.65978723404254,
+        "conversion_rate": 0.8952380952380953,
+        "refund_amt_abs": 200.1,
+        "refund_orders": 10,
+        "refund_rate_amount": 0.004808937847182001,
+        "refund_rate_order": 0.09523809523809523
+      }
+    },
+    {
+      "day": "2010-11-27",
+      "label": "weekend",
+      "metrics": {
+        "gmv": 0.0,
+        "valid_orders": 0,
+        "all_orders": 0,
+        "aov": null,
+        "conversion_rate": null,
+        "refund_amt_abs": 0.0,
+        "refund_orders": 0,
+        "refund_rate_amount": null,
+        "refund_rate_order": null
+      }
+    },
+    {
+      "day": "2010-11-29",
+      "label": "promo_peak_cyber_monday",
+      "metrics": {
+        "gmv": 77038.41,
+        "valid_orders": 111,
+        "all_orders": 125,
+        "aov": 694.0397297297297,
+        "conversion_rate": 0.888,
+        "refund_amt_abs": 194.29,
+        "refund_orders": 13,
+        "refund_rate_amount": 0.0025219887066724248,
+        "refund_rate_order": 0.104
+      }
+    },
+    {
+      "day": "2010-11-30",
+      "label": "month_end",
+      "metrics": {
+        "gmv": 59400.54,
+        "valid_orders": 123,
+        "all_orders": 170,
+        "aov": 482.9312195121951,
+        "conversion_rate": 0.7235294117647059,
+        "refund_amt_abs": 4488.85,
+        "refund_orders": 46,
+        "refund_rate_amount": 0.07556917832733508,
+        "refund_rate_order": 0.27058823529411763
+      }
+    },
+    {
+      "day": "2010-12-01",
+      "label": "month_start",
+      "metrics": {
+        "gmv": 57442.33,
+        "valid_orders": 136,
+        "all_orders": 143,
+        "aov": 422.3700735294118,
+        "conversion_rate": 0.951048951048951,
+        "refund_amt_abs": 325.23,
+        "refund_orders": 7,
+        "refund_rate_amount": 0.0056618525049384315,
+        "refund_rate_order": 0.04895104895104895
+      }
+    },
+    {
+      "day": "2011-06-15",
+      "label": "mid_multi_country",
+      "metrics": {
+        "gmv": 48005.93,
+        "valid_orders": 70,
+        "all_orders": 90,
+        "aov": 685.799,
+        "conversion_rate": 0.7777777777777778,
+        "refund_amt_abs": 2958.81,
+        "refund_orders": 20,
+        "refund_rate_amount": 0.061634260600721615,
+        "refund_rate_order": 0.2222222222222222
+      }
+    }
+  ]
+}
