@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/intent.schema.json",
+  "title": "Intent",
+  "description": "电商运营报表 Agent 的结构化查询意图。由 intent_parser（规则通道）或 llm_client（LLM 通道）产出，经 guard 安全网关放行后交给 query_executor 取数。",
+  "type": "object",
+  "required": ["report_type", "start", "end"],
+  "additionalProperties": false,
+  "properties": {
+    "report_type": {
+      "type": "string",
+      "description": "报表类型",
+      "enum": ["daily", "weekly", "monthly"]
+    },
+    "start": {
+      "type": "string",
+      "description": "区间起始日期（闭区间，含当天）",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "end": {
+      "type": "string",
+      "description": "区间结束日期（闭区间，含当天）",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "country": {
+      "type": ["string", "null"],
+      "description": "市场/国家，取 sales_detail.country 的 43 个白名单取值之一；null 表示全市场（不筛选）",
+      "examples": ["United Kingdom", "Germany", "France", null]
+    },
+    "need_clarify": {
+      "type": "boolean",
+      "description": "true 表示信息不足或被安全网关拦截（此时 message 给出原因），不得出报",
+      "default": false
+    },
+    "raw": {
+      "type": ["string", "null"],
+      "description": "用户原始指令文本，用于报告引用与溯源"
+    },
+    "message": {
+      "type": ["string", "null"],
+      "description": "解析说明或被拦截原因（如 'LLM 已解析意图'、'检测到危险的 SQL 指令片段，已拒绝执行。'）"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "need_clarify": { "const": false } } },
+      "then": { "required": ["start", "end", "report_type"] }
+    }
+  ],
+  "examples": [
+    {
+      "report_type": "daily",
+      "start": "2011-12-08",
+      "end": "2011-12-08",
+      "country": null,
+      "need_clarify": false,
+      "raw": "生成昨日日报",
+      "message": "规则通道已解析意图"
+    },
+    {
+      "report_type": "weekly",
+      "start": "2010-11-22",
+      "end": "2010-11-28",
+      "country": "Germany",
+      "need_clarify": false,
+      "raw": "上周德国周报",
+      "message": "LLM 已解析意图"
+    },
+    {
+      "report_type": "daily",
+      "start": "2011-12-08",
+      "end": "2011-12-08",
+      "country": null,
+      "need_clarify": true,
+      "raw": "生成昨日日报; DROP TABLE sales_detail;--",
+      "message": "检测到危险的 SQL 指令片段，已拒绝执行。"
+    }
+  ]
+}
