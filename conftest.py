@@ -6,6 +6,11 @@ from pathlib import Path
 # 让 pytest 能从项目根导入 app 包
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# 排除交付包与工作目录，避免被递归收集：
+# deliver/ 内含源码副本，若被收集会与主项目同名测试文件冲突（import file mismatch），
+# 导致 collection error；.workbuddy/ 为工作目录，同样不含需要运行的测试。
+collect_ignore_glob = ["deliver/*", ".workbuddy/*"]
+
 # 测试期间强制走规则通道：避免导入 app.backend.main 时其顶层 load_dotenv
 # 把 .env 里的 LLM_MODE=llm 注入进程，导致生成类测试去调用真实大模型（慢且依赖外部 API）。
 # 评测脚本（eval_llm.py）会自行显式开启 LLM 通道。

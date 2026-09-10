@@ -164,6 +164,7 @@ export function WorkbenchPage({
   const [loadingRecent, setLoadingRecent] = useState(true);
   const [submitBusy, setSubmitBusy] = useState(false);
   const timer = useRef<number | null>(null);
+  const GENERATING_KEY = "wb_report_generating_id";
 
   // 从历史页定位到指定报告
   useEffect(() => {
@@ -175,6 +176,29 @@ export function WorkbenchPage({
         toast.error(e instanceof ApiError ? e.message : "加载报告失败"),
       );
   }, [initialReportId]);
+
+  // 页面刷新后：若之前有正在生成的报告，自动恢复轮询
+  useEffect(() => {
+    const saved = localStorage.getItem(GENERATING_KEY);
+    if (!saved) return;
+    const id = Number(saved);
+    if (!id) {
+      localStorage.removeItem(GENERATING_KEY);
+      return;
+    }
+    api
+      .getReport(id)
+      .then((r) => {
+        if (r.status === "pending" || r.status === "running") {
+          setGenerating(r);
+          toast.info("恢复轮询生成中的报告…");
+        } else {
+          setCurrent(r);
+          localStorage.removeItem(GENERATING_KEY);
+        }
+      })
+      .catch(() => localStorage.removeItem(GENERATING_KEY));
+  }, []);
 
   const loadRecent = useCallback(async () => {
     try {
@@ -202,13 +226,14 @@ export function WorkbenchPage({
         if (r.status !== "running" && r.status !== "pending") {
           setCurrent(r);
           setGenerating(null);
+          localStorage.removeItem(GENERATING_KEY);
           if (r.status === "drafted") toast.info("报告已生成，请审阅确认");
           else if (r.status === "failed") toast.error("生成失败");
           loadRecent();
         }
       } catch {
-        setGenerating(null);
-        toast.error("查询报告状态失败，请到历史中查看");
+        // 不直接清空 generating，允许用户刷新页面后继续轮询
+        toast.error("查询报告状态失败，刷新页面可恢复轮询");
       }
     };
     timer.current = window.setInterval(poll, 1500);
@@ -224,6 +249,7 @@ export function WorkbenchPage({
     try {
       const rep = await api.generate(text);
       setGenerating(rep);
+      localStorage.setItem(GENERATING_KEY, String(rep.id));
       setCurrent(null);
       setInstruction("");
       toast.info("已提交，正在生成…");

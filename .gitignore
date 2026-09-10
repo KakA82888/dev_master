@@ -13,6 +13,7 @@ __pycache__/
 # 前端
 node_modules/
 dist/
+dist.bak/
 .vite/
 
 # 大文件数据产物（由 scripts/ 重新生成，不入库）
@@ -23,3 +24,7 @@ data/raw/*.xlsx
 
 # 日志与导出
 *.log
+
+# 临时工作目录
+.workbuddy/ppt/
+.workbuddy/tmp/
