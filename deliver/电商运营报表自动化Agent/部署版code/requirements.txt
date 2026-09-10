@@ -1,0 +1,31 @@
+# 电商运营报表自动化 Agent —— Python 依赖清单
+# 说明：版本为本项目实测通过的版本（Python 3.13 环境），建议使用虚拟环境安装。
+# 安装：pip install -r requirements.txt
+
+# ---------- 后端服务 ----------
+fastapi==0.141.1          # REST API 框架（S3 后端）
+uvicorn==0.52.4           # ASGI 服务器，同时托管前端 dist（单端口部署）
+python-dotenv==1.2.3      # 读取项目根 .env（LLM Key 等敏感配置）
+
+# ---------- 数据访问与校验 ----------
+SQLAlchemy==2.0.52        # ORM：users / reports 两张表（app.db）
+pydantic==2.13.5          # 请求响应模型与 Intent 校验
+pandas==3.0.5             # 指标计算（S1 指标内核）
+numpy==2.5.2              # pandas 依赖
+openpyxl==3.1.5           # 读取原始 Excel（ETL 阶段）
+
+# ---------- 鉴权 ----------
+python-jose==3.5.0        # JWT 签发与校验
+passlib==1.7.4            # 密码哈希框架
+bcrypt==4.0.1             # 实际哈希算法（passlib 后端）
+
+# ---------- 大模型与 Agent 编排 ----------
+openai==3.8.0             # OpenAI 兼容客户端（LLM 通道，接 SiliconFlow 等）
+langgraph==1.2.11         # 状态机编排：plan → execute → reflect → build
+
+# ---------- 报告导出 ----------
+python-docx==1.2.0        # Word(.docx) 结构化渲染导出
+
+# ---------- 测试与评测 ----------
+pytest==9.1.1             # 单元 / 集成测试（26 passed）
+httpx==0.28.1             # 后端 HTTP 冒烟脚本 smoke_http.py 使用
