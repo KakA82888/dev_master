@@ -84,12 +84,44 @@ def _is_full_month(s: date, e: date) -> bool:
     return s.day == 1 and e == month_range(s.year, s.month)[1]
 
 
+_CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
+           "七": 7, "八": 8, "九": 9, "十": 10}
+
+
+def _norm_year(y: int) -> int:
+    """归一化年份：支持省略前两位的写法（"10年"→2010，"99年"→1999）。"""
+    if y >= 100:
+        return y
+    return 2000 + y if y < 90 else 1900 + y
+
+
+def month_nth_week(y: int, m: int, n: int) -> tuple[date, date]:
+    """某月第 n 个自然周（周一~周日），首/末周按月份边界截断，**绝不跨月**。
+
+    例：2010-04 第 1 周 = 04-01(四) ~ 04-04(日)；第 2 周 = 04-05 ~ 04-11。
+    """
+    if n < 1:
+        raise InvalidDateError(f"周序号必须从 1 开始，收到 {n}")
+    first, last = month_range(y, m)
+    cur = first
+    for i in range(1, n + 1):
+        week_end = cur + timedelta(days=6 - cur.weekday())  # 本周周日
+        if week_end > last:
+            week_end = last                                   # 末尾按月末截断
+        if i == n:
+            return cur, week_end
+        cur = week_end + timedelta(days=1)
+        if cur > last:
+            raise InvalidDateError(f"{y}年{m}月没有第{n}周")
+    return first, last  # 理论上不可达
+
+
 # ---------- 单日期解析 ----------
 def _resolve_single_date(seg: str, anchor: date) -> date | None:
     """从片段中解析单个日期；无日期返回 None。含日号的绝对日期优先。"""
-    m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})[日号]?", seg)
+    m = re.search(r"(\d{2,4})年(\d{1,2})月(\d{1,2})[日号]?", seg)
     if m:
-        return _mkdate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        return _mkdate(_norm_year(int(m.group(1))), int(m.group(2)), int(m.group(3)))
     m = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", seg)
     if m:
         return _mkdate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
@@ -106,10 +138,38 @@ def _resolve_single_date(seg: str, anchor: date) -> date | None:
 def _has_explicit_day(seg: str) -> bool:
     """片段中是否含"带日号"的绝对日期（用于区分"2011年11月"与"2011年11月22日"）。"""
     return bool(
-        re.search(r"\d{4}年\d{1,2}月\d{1,2}[日号]?", seg)
+        re.search(r"\d{2,4}年\d{1,2}月\d{1,2}[日号]?", seg)
         or re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", seg)
         or re.search(r"\d{1,2}月\d{1,2}[日号]", seg)
     )
+
+
+def _parse_nth_week(text: str, anchor: date) -> tuple[date, date] | None:
+    """「X月第 N 周 / X月首周」→ 该月第 N 个自然周（不跨月）。无此句式返回 None。"""
+    m = re.search(r"(?:第\s*([一二三四五六七八九十\d]{1,2})\s*(?:个)?\s*周|首\s*周)", text)
+    if not m:
+        return None
+    # 出现多个"第N周"（如"第一周到第二周"）时交给区间规则处理
+    if len(re.findall(r"第\s*[一二三四五六七八九十\d]{1,2}\s*(?:个)?\s*周", text)) > 1:
+        return None
+    tok = m.group(1)
+    if tok is None:            # "首周"
+        n = 1
+    elif tok.isdigit():
+        n = int(tok)
+    elif tok in _CN_NUM:
+        n = _CN_NUM[tok]
+    else:
+        return None            # "十一"等暂不支持，交给其它规则
+    my = re.search(r"(\d{2,4})\s*年\s*(\d{1,2})\s*月", text)
+    if my:
+        y, mo = _norm_year(int(my.group(1))), int(my.group(2))
+    else:
+        mm = re.search(r"(?<!\d)(\d{1,2})\s*月", text)
+        if not mm:
+            return None        # 未给出月份，交给其它规则处理
+        y, mo = anchor.year, int(mm.group(1))
+    return month_nth_week(y, mo, n)
 
 
 # ---------- 维度提取 ----------
@@ -144,6 +204,12 @@ def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, dat
         if sd and not re.search(r"(到|至|~|—|–)", text):
             return (sd, sd)
 
+    # 0.5) 「X月第N周」：该月内第 N 个自然周（不跨月），必须先于整月规则，
+    #      否则"2010年4月第一周"会被"2010年4月"整月规则吞掉。
+    nw = _parse_nth_week(text, anchor)
+    if nw:
+        return nw
+
     # 1) 显式区间：到 / 至 / ~ / —
     sep = re.search(r"(到|至|~|—|–)", text)
     if sep:
@@ -160,10 +226,10 @@ def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, dat
                     e = _mkdate(s.year, s.month, int(m.group(1)))
         if s and e:
             return (min(s, e), max(s, e))
-    # 2) 整月：YYYY年MM月 或 YYYY-MM（非完整日期）
-    m = re.search(r"(\d{4})年(\d{1,2})月", text)
+    # 2) 整月：YYYY年MM月 或 YYYY-MM（非完整日期）；年份允许省略前两位（"10年4月"）
+    m = re.search(r"(\d{2,4})年(\d{1,2})月", text)
     if m:
-        return month_range(int(m.group(1)), int(m.group(2)))
+        return month_range(_norm_year(int(m.group(1))), int(m.group(2)))
     if re.search(r"\d{4}-\d{1,2}(?!-\d)", text):
         m = re.search(r"(\d{4})-(\d{1,2})", text)
         return month_range(int(m.group(1)), int(m.group(2)))
@@ -260,3 +326,14 @@ def parse_safe(text: str, anchor: date | None = None) -> Intent:
             it.blocked = code2
             it.message = reason2
     return it
+
+
+def nth_week_range(text: str, anchor: date | None = None) -> tuple[date, date] | None:
+    """供 LLM 通道纠偏：指令含「X月第N周」时返回确定性区间，否则 None。
+
+    LLM 对"X月第N周"易误算为"该月1日所在自然周"（跨到上月），故此处以规则结果覆盖。
+    """
+    try:
+        return _parse_nth_week(text, anchor or ANCHOR)
+    except InvalidDateError:
+        return None

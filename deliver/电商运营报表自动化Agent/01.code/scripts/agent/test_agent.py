@@ -47,6 +47,37 @@ def test_parse_this_month():
     assert i.start.startswith("2011-12")
 
 
+def test_parse_month_nth_week_not_crossing_month():
+    """「X月第N周」必须限定在该月内，绝不跨到上一个月（回归：曾算成 2010-03-29~04-04）。"""
+    i = parse("生成10年4月第一周周报")
+    assert i.report_type == "weekly"
+    assert i.start == "2010-04-01" and i.end == "2010-04-04"  # 4/1 是周四，当周周日为 4/4
+    assert i.start.startswith("2010-04") and i.end.startswith("2010-04")
+
+
+def test_parse_month_nth_week_second_and_yearless():
+    """第 2 周为完整自然周；2 位年份"10年"归一化为 2010。"""
+    i = parse("生成10年4月第二周周报")
+    assert i.start == "2010-04-05" and i.end == "2010-04-11"
+    j = parse("2010年4月第二周周报")
+    assert (j.start, j.end) == (i.start, i.end)
+
+
+def test_parse_month_nth_week_out_of_range():
+    """该月没有第 N 周时应拦截，而不是给出错误区间。"""
+    i = parse("生成10年4月第六周周报")
+    assert i.need_clarify is True
+
+
+def test_parse_nth_week_guard_for_llm():
+    """规则纠偏入口：仅「X月第N周」句式返回区间，其它指令返回 None。"""
+    from intent_parser import nth_week_range
+
+    assert nth_week_range("生成10年4月第一周周报") == (
+        date(2010, 4, 1), date(2010, 4, 4))
+    assert nth_week_range("生成昨日日报") is None
+
+
 # ---------- 端到端链路 ----------
 def test_e2e_yesterday():
     r = run("生成昨日日报", _con())

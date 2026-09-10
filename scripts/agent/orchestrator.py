@@ -16,7 +16,7 @@ from typing import Optional, TypedDict
 
 from langgraph.graph import StateGraph, START, END
 
-from intent_parser import parse, parse_safe, Intent
+from intent_parser import parse, parse_safe, nth_week_range, Intent
 from query_executor import execute, MetricsBundle
 from report_builder import build_report
 from llm_client import llm_parse_intent
@@ -61,6 +61,19 @@ def build_app(con: sqlite3.Connection):
             if os.getenv("LLM_MODE") == "llm":
                 try:
                     intent = _llm_plan(state["instruction"], anchor)
+                    # 确定性纠偏：「X月第N周」易被 LLM 算成"1日所在自然周"（跨到上月），
+                    # 此类句式由规则解析精确给出该月内第 N 个自然周（不跨月）。
+                    ov = nth_week_range(state["instruction"], anchor)
+                    if ov:
+                        s, e = ov
+                        fixed = Intent(
+                            report_type=intent.report_type or "weekly",
+                            start=s.isoformat(), end=e.isoformat(),
+                            country=intent.country, raw=state["instruction"],
+                            message=f"已解析为{ '全市场' if intent.country is None else intent.country }的{intent.report_type or 'weekly'}报（{s}~{e}）",
+                        )
+                        return {"intent": fixed.model_dump(),
+                                "notes": [fixed.message + "（LLM 解析 + 规则纠偏）"]}
                     return {"intent": intent.model_dump(),
                             "notes": [intent.message + "（LLM 解析）"]}
                 except Exception as e:

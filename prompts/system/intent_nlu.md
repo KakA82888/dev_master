@@ -32,8 +32,11 @@
    - daily：start=end=该天。
    - weekly：该天所在周一至周日（含该天）。
    - monthly：该天所在月份 1 号至月末最后一天。
+   - 「X月第N周」/「X月首周」：指该月**内**第 N 个自然周（周一~周日），第 1 周从该月 1 号起、末周至该月最后一天止，**绝不跨月**。
+     例：2010年4月第一周 = 2010-04-01 ~ 2010-04-04（4/1 是周四，当周周日为 4/4）；第二周 = 2010-04-05 ~ 2010-04-11。
+     错误示例：不要把"4月第一周"解析为"4 月 1 日所在自然周"（那会跨到 3 月 29 日）。
    - 相对词："昨日"=anchor 前一天；"今天/今日"=anchor；"上周"=anchor 所在周的上一个完整周（周一~周日）；"本周"=anchor 所在周；"上月"=anchor 上个月整月；"本月"=anchor 所在月；"今年"=anchor 所在年 1-1 至 12-31；"去年"=去年全年。
-   - 绝对日期：YYYY年M月D日 / YYYY-MM-DD / M月D日（年份取 anchor 年）等。
+   - 绝对日期：YYYY年M月D日 / YYYY-MM-DD / M月D日（年份取 anchor 年）等。年份可省略前两位："10年4月"=2010年4月，"11年12月"=2011年12月。
 3. 市场（country）：将中文国名映射到数据集 Country 字段值。常见映射：
 {country_block}
    指令含"全部/所有/总体/全球/整体/汇总/不分国家"或省略 → null（全市场）。
@@ -51,7 +54,9 @@
   → guard.py 安全网关（确定性拦截：injection / overreach / fabrication / out_of_range / invalid_date / sqli）
   → 放行后：LLM_MODE=llm 且已配置 Key → 本提示词解析
            否则 / 解析失败 → intent_parser 规则通道
+  → 「X月第N周」句式 → nth_week_range 规则纠偏（覆盖 LLM 结果，杜绝跨月）
   → Intent → query_executor（指标计算）→ report_builder（模板渲染）→ 报告
 ```
 
 > **关键点**：安全网关在 LLM **之前**运行，LLM 只处理已放行的指令；LLM 输出经 JSON 提取 + 字段校验（`report_type` 白名单、`start/end` 日期格式）后才构造 `Intent`。
+> **确定性纠偏**：`intent_parser.nth_week_range` 对"X月第N周／首周"给出不受 LLM 影响的精确区间（该月内第 N 个自然周，不跨月），在 LLM 解析后覆盖其 `start/end`，避免大模型把"4月第一周"算成 3/29~4/4。
