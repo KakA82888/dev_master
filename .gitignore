@@ -28,3 +28,9 @@ data/raw/*.xlsx
 # 临时工作目录
 .workbuddy/ppt/
 .workbuddy/tmp/
+
+# 无关参考资料压缩包（非本项目交付物，仅本地留存，不入库）
+docs/*.zip
+
+# git filter-branch 历史重写产生的临时目录
+.git-rewrite/
