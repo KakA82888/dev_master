@@ -64,7 +64,7 @@ def check_text(text: str) -> tuple[bool, str, str]:
 
 
 def check_range(start: str | None = None, end: str | None = None) -> tuple[bool, str, str]:
-    """日期越界校验：请求区间与数据集覆盖范围无交集即拒绝。"""
+    """日期越界校验：起止颠倒即拒绝；请求区间与数据集覆盖范围无交集即拒绝。"""
     if not start or not end:
         return True, "", ""
     try:
@@ -72,12 +72,39 @@ def check_range(start: str | None = None, end: str | None = None) -> tuple[bool,
         e = date.fromisoformat(end)
     except ValueError:
         return False, "invalid_date", "日期格式无法识别，请改写为「YYYY年M月D日」或「YYYY-MM-DD」。"
+    if s > e:
+        return False, "invalid_range", (
+            f"区间起止颠倒：开始日期 {start} 晚于结束日期 {end}，请检查指令中的日期。"
+        )
     if e < DATA_MIN or s > DATA_MAX:
         return False, "out_of_range", (
             f"请求区间 {start}~{end} 超出数据覆盖范围 "
             f"（{DATA_MIN.isoformat()} ~ {DATA_MAX.isoformat()}），无法生成报表。"
         )
     return True, "", ""
+
+
+def range_warning(start: str | None = None, end: str | None = None) -> str | None:
+    """部分越界提示：区间与数据范围有交集但未完全覆盖时返回提示文案，否则 None。
+
+    与 check_range 的"完全无交集才拒绝"互补：部分越界不能静默截断，
+    否则用户会误以为拿到了整个区间的完整数据。
+    """
+    if not start or not end:
+        return None
+    try:
+        s = date.fromisoformat(start)
+        e = date.fromisoformat(end)
+    except ValueError:
+        return None
+    if e < DATA_MIN or s > DATA_MAX:
+        return None  # 完全越界由 check_range 负责拒绝，此处不重复提示
+    if s < DATA_MIN or e > DATA_MAX:
+        return (
+            f"注意：请求区间 {start}~{end} 部分超出数据覆盖范围"
+            f"（{DATA_MIN.isoformat()} ~ {DATA_MAX.isoformat()}），报表仅含范围内数据。"
+        )
+    return None
 
 
 def check(text: str, start: str | None = None, end: str | None = None) -> tuple[bool, str, str]:

@@ -16,6 +16,10 @@ collect_ignore_glob = ["deliver/*", ".workbuddy/*"]
 # 评测脚本（eval_llm.py）会自行显式开启 LLM 通道。
 os.environ["LLM_MODE"] = "rule"
 
+# 后端接口测试使用 ?sync=true（同步生成，返回即完成）；
+# 该参数默认关闭以防止调试后门暴露在生产接口上，测试期显式开启。
+os.environ["APP_ALLOW_SYNC"] = "1"
+
 # 测试使用独立的应用状态库，避免污染开发数据（app.db）
 # 注意：沙箱禁止直接删文件（Path.unlink 抛 SAFE_DELETE_FAIL_CLOSED），
 # 故用 SQL DROP TABLE 清空旧结构，表由 init_db() 在收集期重建。

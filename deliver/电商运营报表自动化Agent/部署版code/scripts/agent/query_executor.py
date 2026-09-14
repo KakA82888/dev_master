@@ -64,15 +64,35 @@ def execute(intent: Intent, con: sqlite3.Connection) -> MetricsBundle:
     anomalies = detect(cur, prev)
 
     cur_c = con.cursor()
-    cur_c.execute(
-        """
-        SELECT order_date, gmv, valid_orders, all_orders, refund_amt_abs, refund_orders
-        FROM daily_agg
-        WHERE order_date BETWEEN ? AND ?
-        ORDER BY order_date
-        """,
-        (intent.start, intent.end),
-    )
+    if intent.country is None:
+        cur_c.execute(
+            """
+            SELECT order_date, gmv, valid_orders, all_orders, refund_amt_abs, refund_orders
+            FROM daily_agg
+            WHERE order_date BETWEEN ? AND ?
+            ORDER BY order_date
+            """,
+            (intent.start, intent.end),
+        )
+    else:
+        # 指定市场：daily_agg 未按国家拆分，必须从单一事实表按国家实时聚合。
+        # 否则逐日明细会退化为全市场数据，与核心指标（已按国家过滤）口径不一致，
+        # 导致「分项加总 ≠ 总计」，违背金额对账纪律。
+        cur_c.execute(
+            """
+            SELECT order_date,
+                   SUM(CASE WHEN is_refund=0 AND is_product=1 THEN amount ELSE 0 END) AS gmv,
+                   COUNT(DISTINCT CASE WHEN is_refund=0 AND is_product=1 THEN order_id END) AS valid_orders,
+                   COUNT(DISTINCT order_id) AS all_orders,
+                   SUM(CASE WHEN is_refund=1 THEN ABS(amount) ELSE 0 END) AS refund_amt_abs,
+                   COUNT(DISTINCT CASE WHEN is_refund=1 THEN order_id END) AS refund_orders
+            FROM sales_detail
+            WHERE order_date BETWEEN ? AND ? AND country = ?
+            GROUP BY order_date
+            ORDER BY order_date
+            """,
+            (intent.start, intent.end, intent.country),
+        )
     cols = [d[0] for d in cur_c.description]
     existing = {r[0]: DailyRow(**dict(zip(cols, r))) for r in cur_c.fetchall()}
     # 补全区间内所有日期（含 0 销售日），保证日报完整性

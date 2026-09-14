@@ -1,4 +1,5 @@
 """报告路由：生成、预览、确认回写、归档、历史、删除、导出(Markdown/Word)。"""
+import os
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -20,6 +21,10 @@ from ..security import get_current_user
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
+# 同步生成（?sync=true）会把整个生成过程阻塞在请求线程内，仅供测试使用。
+# 通过环境变量 APP_ALLOW_SYNC=1 显式开启，避免该调试后门在生产接口上被任意调用。
+_ALLOW_SYNC = os.getenv("APP_ALLOW_SYNC", "").strip().lower() in ("1", "true", "yes", "on")
+
 
 def _get_owned(report_id: int, db: Session, current_user: CurrentUser) -> Report:
     rep = db.get(Report, report_id)
@@ -34,8 +39,14 @@ def generate(
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
-    sync: bool = Query(False, description="测试用：同步生成，返回即已完成"),
+    sync: bool = Query(False, description="测试用：同步生成，返回即已完成（需 APP_ALLOW_SYNC=1）"),
 ):
+    if sync and not _ALLOW_SYNC:
+        # 放在建记录之前，避免被拒后仍留下 pending 垃圾记录
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="同步生成仅在测试模式（APP_ALLOW_SYNC=1）下可用，请改用异步生成。",
+        )
     rep = Report(user_id=current_user.id, instruction=body.instruction, status="pending")
     db.add(rep)
     db.commit()

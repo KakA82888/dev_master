@@ -37,6 +37,9 @@ class Report(Base):
     metrics_json = Column(Text, nullable=True)             # MetricsBundle 序列化，供 S5 导出/回看
     status = Column(String(16), default=STATUS_PENDING, nullable=False)
     error = Column(Text, nullable=True)
+    # 失败/拦截原因码（blocked=安全网关拦截 / out_of_range=日期越界 /
+    # generation_error=生成链路故障 / internal_error=内部异常），供前端区分提示语义
+    error_code = Column(String(32), nullable=True)
     version = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

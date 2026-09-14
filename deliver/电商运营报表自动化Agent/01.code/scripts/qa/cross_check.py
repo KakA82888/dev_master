@@ -39,6 +39,24 @@ FEATURE_DAYS = [
     ("2011-06-15", "mid_multi_country"),
 ]
 
+# 区间对账样本：报表实际交付的是周报/月报（跨多日区间），
+# 而区间取数走的是 daily_agg 累加 / 区间 DISTINCT 两条不同实现，
+# 必须与 pandas 全区间切片三方互验，否则「单日对账」无法覆盖真正的交付路径。
+FEATURE_RANGES = [
+    ("2010-11-22", "2010-11-28", "normal_week"),
+    ("2010-11-29", "2010-12-05", "cross_month"),
+    ("2011-11-28", "2011-12-04", "year_end_week"),
+    ("2009-12-01", "2009-12-07", "data_start_week"),
+]
+
+# 参与对账的 9 个指标；金额类用 AMOUNT_TOL，其余用严格容差
+_METRIC_KEYS = (
+    "gmv", "valid_orders", "all_orders", "aov", "conversion_rate",
+    "refund_amt_abs", "refund_orders", "refund_rate_amount", "refund_rate_order",
+)
+_AMOUNT_KEYS = {"gmv", "refund_amt_abs"}
+_RATIO_TOL = 1e-9
+
 # 全期 GMV 基线（口径 C），来自口径文档 v1.0
 GMV_TOTAL_BASELINE = 19642692.15
 AMOUNT_TOL = 0.01  # GBP
@@ -46,6 +64,24 @@ AMOUNT_TOL = 0.01  # GBP
 
 def _sql_day(con, day):
     return _period_metrics_sql(con, day, day)
+
+
+def _violation(m1: dict, m2: dict) -> tuple[bool, float, str | None]:
+    """比较两组指标，返回 (是否违规, 最大差异, 违规指标名)。
+
+    金额类容差 AMOUNT_TOL（0.01 GBP），比率类 1e-9，计数类必须完全相等。
+    """
+    worst, worst_key = 0.0, None
+    for k in _METRIC_KEYS:
+        v1, v2 = m1.get(k), m2.get(k)
+        if v1 is None or v2 is None:
+            diff = 0.0 if v1 == v2 else float("inf")
+        else:
+            diff = abs(float(v1) - float(v2))
+        tol = AMOUNT_TOL if k in _AMOUNT_KEYS else _RATIO_TOL
+        if diff > tol and diff >= worst:
+            worst, worst_key = diff, k
+    return (worst_key is not None), worst, worst_key
 
 
 def run(con) -> dict:
@@ -75,6 +111,48 @@ def run(con) -> dict:
             if (isinstance(pv, float) and diff > AMOUNT_TOL) or (not isinstance(pv, float) and diff != 0):
                 results["pass"] = False
         results["days"].append({"day": day, "label": label, "diff": day_diff, "sql": m_sql})
+
+    # ---- 前提断言：daily_agg 存的是「按天去重」的订单数，区间累加只有在
+    #      「同一订单不跨天」时才与区间 COUNT(DISTINCT) 等价。
+    #      显式保护该前提——一旦数据出现跨天订单，立即 fail，
+    #      而不是静默产出偏高的区间订单数（这是原对账只验单日时的盲区）。
+    cur0 = con.cursor()
+    cur0.execute(
+        "SELECT COUNT(*) FROM (SELECT order_id FROM sales_detail "
+        "GROUP BY order_id HAVING COUNT(DISTINCT order_date) > 1)"
+    )
+    cross_day = int(cur0.fetchone()[0])
+    results["cross_day_orders"] = cross_day
+    if cross_day != 0:
+        results["pass"] = False
+
+    # ---- 区间对账：报表实际交付的是周报/月报（跨多日），
+    #      取数走 daily_agg 累加 或 区间 DISTINCT 两条不同实现，
+    #      必须与 pandas 全区间切片三方互验，否则单日对账覆盖不到真正交付路径。
+    results["ranges"] = []
+    for s, e, label in FEATURE_RANGES:
+        m_fast = period_metrics_from_daily(con, s, e)   # ① daily_agg 快路径（全市场）
+        m_sqlr = _period_metrics_sql(con, s, e)         # ② 区间全量 SQL（独立实现）
+        df_r = pd.read_sql(
+            "SELECT order_id, amount, is_refund, is_product FROM sales_detail "
+            "WHERE order_date BETWEEN ? AND ?",
+            con,
+            params=(s, e),
+        )
+        m_pdr = pandas_period_metrics(df_r)             # ③ pandas 全区间切片
+
+        bad_fs, w_fs, k_fs = _violation(m_fast, m_sqlr)
+        bad_fp, w_fp, k_fp = _violation(m_fast, m_pdr)
+        bad_sp, w_sp, k_sp = _violation(m_sqlr, m_pdr)
+        if bad_fs or bad_fp or bad_sp:
+            results["pass"] = False
+        results["ranges"].append({
+            "start": s, "end": e, "label": label,
+            "fast_vs_sql": {"violated": bad_fs, "worst": w_fs, "key": k_fs},
+            "fast_vs_pandas": {"violated": bad_fp, "worst": w_fp, "key": k_fp},
+            "sql_vs_pandas": {"violated": bad_sp, "worst": w_sp, "key": k_sp},
+            "sql": m_sqlr,
+        })
 
     # 全量金额断言
     cur = con.cursor()
@@ -123,13 +201,28 @@ def main() -> int:
             {"day": d, "label": l, "metrics": r["sql"]}
             for (d, l), r in zip(FEATURE_DAYS, res["days"])
         ],
+        # 新增：区间（周报/月报）基准，覆盖实际交付路径的三方对账结果
+        "cross_day_orders": res["cross_day_orders"],
+        "feature_ranges": [
+            {"start": r["start"], "end": r["end"], "label": r["label"], "metrics": r["sql"]}
+            for r in res["ranges"]
+        ],
     }
     with open(REF_JSON, "w", encoding="utf-8") as f:
         json.dump(ref, f, ensure_ascii=False, indent=2)
 
-    print("=== 双轨对账结果 ===")
+    print("=== 双轨对账结果（单日）===")
     for r in res["days"]:
         print(f"  {r['day']} ({r['label']}): 最大差异 = {max(r['diff'].values()):.4f}")
+    print(f"--- 跨天订单前提断言：跨天订单数 = {res['cross_day_orders']}（须为 0）---")
+    print("=== 双轨对账结果（区间：daily_agg累加 / 区间SQL / pandas 三方）===")
+    for r in res["ranges"]:
+        print(
+            f"  {r['start']}~{r['end']} ({r['label']}): "
+            f"fast-vs-sql {'OK' if not r['fast_vs_sql']['violated'] else 'FAIL'} / "
+            f"fast-vs-pandas {'OK' if not r['fast_vs_pandas']['violated'] else 'FAIL'} / "
+            f"sql-vs-pandas {'OK' if not r['sql_vs_pandas']['violated'] else 'FAIL'}"
+        )
     print("--- 全量金额断言 ---")
     for k, v in res["amount_assertions"].items():
         print(f"  {k}: {v}")

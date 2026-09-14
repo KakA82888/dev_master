@@ -15,6 +15,8 @@ export interface ReportSummary {
   period_end?: string | null;
   market?: string | null;
   status: string;
+  error?: string | null;
+  error_code?: string | null;
   created_at?: string | null;
 }
 
@@ -22,10 +24,31 @@ export interface ReportDetail extends ReportSummary {
   title?: string | null;
   markdown?: string | null;
   metrics_json?: string | null;
-  error?: string | null;
   version?: number;
   updated_at?: string | null;
   confirmed_at?: string | null;
+}
+
+// 安全网关拦截 / 指令不合规类原因码：应引导用户改写指令，
+// 而不是笼统提示"生成失败"（那会让人误以为是系统故障而反复重试）。
+export const GATE_BLOCK_CODES: string[] = [
+  "injection",     // 提示词注入
+  "overreach",     // 越权
+  "fabrication",   // 要求伪造数值
+  "unsupported",   // 不支持的口径
+  "sqli",          // 危险 SQL 片段
+  "out_of_range",  // 日期越界
+  "invalid_date",  // 无效日期
+  "invalid_range", // 区间起止颠倒
+  "blocked",       // 兜底拦截码
+];
+
+export function isGateBlocked(code?: string | null): boolean {
+  return !!code && GATE_BLOCK_CODES.includes(code);
+}
+
+export function failureTitle(code?: string | null): string {
+  return isGateBlocked(code) ? "指令被安全网关拦截" : "生成失败";
 }
 
 export const STATUS_LABEL: Record<string, string> = {

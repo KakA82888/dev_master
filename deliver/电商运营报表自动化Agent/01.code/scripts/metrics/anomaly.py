@@ -16,7 +16,7 @@ THRESHOLDS = {
     "gmv_major": 0.50,         # GMV 重大异常 环比 ±50%
     "aov_change": 0.15,        # 客单价异动 环比 ±15%
     "conversion_drop_pp": 5.0, # 订单转化率绝对下滑 ≥5 个百分点
-    "refund_amount_rate_daily": 0.10,  # 退款金额率单日 ≥10%
+    "refund_rate_amount_level": 0.10,  # 退款金额率（当期区间口径）绝对水平 ≥10%
     "refund_rise_pp": 5.0,     # 退款率环比上升 ≥5 个百分点
 }
 
@@ -46,8 +46,8 @@ def detect(cur: dict, prev: dict | None = None) -> list[str]:
             if d >= THRESHOLDS["refund_rise_pp"]:
                 flags.append("退款异常（金额率环比 ≥ +5pp）")
 
-    # 单日退款金额率绝对阈值（不依赖上期）
-    if cur.get("refund_rate_amount") is not None and cur["refund_rate_amount"] >= THRESHOLDS["refund_amount_rate_daily"]:
+    # 当期退款金额率绝对水平阈值（不依赖上期；作用于整个报告区间，非单日）
+    if cur.get("refund_rate_amount") is not None and cur["refund_rate_amount"] >= THRESHOLDS["refund_rate_amount_level"]:
         flags.append("退款异常（金额率 ≥10%）")
 
     return flags

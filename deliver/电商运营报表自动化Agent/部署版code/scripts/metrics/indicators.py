@@ -52,7 +52,12 @@ def conversion_rate(df: pd.DataFrame):
 
 
 def refund_amount_abs(df: pd.DataFrame) -> float:
-    """退款金额绝对值之和（GBP）。"""
+    """退款金额 = SUM(|amount|) where is_refund=1（逐笔取绝对值后求和，GBP）。
+
+    注意与「退款净额 SUM(amount)」（带符号，仅用于 GMV 三口径闭合）区分：
+    全期两者相差 747.14 GBP（存在 1 行正额退款记录），详见《01_指标口径与数据字典》§3。
+    本口径**按天可加**，是 daily_agg 物化表与区间累加口径成立的前提。
+    """
     return float(df.loc[df["is_refund"] == 1, "amount"].abs().sum())
 
 

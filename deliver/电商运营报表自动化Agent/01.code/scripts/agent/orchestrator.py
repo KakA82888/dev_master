@@ -16,10 +16,11 @@ from typing import Optional, TypedDict
 
 from langgraph.graph import StateGraph, START, END
 
-from intent_parser import parse, parse_safe, nth_week_range, Intent
+from intent_parser import parse, parse_safe, nth_week_range, Intent, COUNTRY_MAP
 from query_executor import execute, MetricsBundle
 from report_builder import build_report
 from llm_client import llm_parse_intent
+from guard import check_range as guard_check_range
 
 
 class AgentState(TypedDict):
@@ -30,6 +31,23 @@ class AgentState(TypedDict):
     report: Optional[str]
     notes: list
     error: Optional[str]
+    error_code: Optional[str]
+
+
+# LLM 通道可接受的市场白名单 = 提示词中给出的中文国名映射值集合。
+# LLM 若返回白名单外的市场名（幻觉/拼写漂移），SQL 过滤将命中 0 行，
+# 会静默产出「空报告」，故必须在编排层拦截并回退规则通道。
+_VALID_COUNTRIES = set(COUNTRY_MAP.values())
+
+
+def _validate_llm_intent(intent: Intent) -> Optional[str]:
+    """对 LLM 解析结果做确定性校验；返回不通过原因，None 表示通过。"""
+    if intent.country is not None and intent.country not in _VALID_COUNTRIES:
+        return f"市场「{intent.country}」不在支持列表内"
+    ok, _code, msg = guard_check_range(intent.start, intent.end)
+    if not ok:
+        return f"日期区间未通过校验：{msg}"
+    return None
 
 
 def _resolve_anchor(state: AgentState) -> Optional[date]:
@@ -54,13 +72,21 @@ def build_app(con: sqlite3.Connection):
             # 安全网关始终优先（确定性拦截注入/越权/伪造/越界/SQLi）
             safe = parse_safe(state["instruction"], anchor)
             if safe.need_clarify:
-                # 被安全网关拦截：不出报，直接把原因返回给调用方
-                return {"error": safe.message, "intent": safe.model_dump(),
-                        "notes": [safe.message]}
+                # 被安全网关拦截：不出报，直接把原因与原因码返回给调用方
+                # （原因码供上层区分「安全拦截」与「技术故障」，前端据此给出明确提示）
+                return {"error": safe.message, "error_code": safe.blocked or "blocked",
+                        "intent": safe.model_dump(), "notes": [safe.message]}
             # 网关放行后再选通道
             if os.getenv("LLM_MODE") == "llm":
                 try:
                     intent = _llm_plan(state["instruction"], anchor)
+                    # LLM 结果必须再过一次确定性校验：模型可能幻觉出数据范围外的日期，
+                    # 或返回支持列表外的市场名（会静默产出 GMV=0 的空报告）。
+                    invalid = _validate_llm_intent(intent)
+                    if invalid:
+                        return {"intent": safe.model_dump(),
+                                "notes": [safe.message,
+                                          f"LLM 解析结果未通过校验（{invalid}），已回退规则通道"]}
                     # 确定性纠偏：「X月第N周」易被 LLM 算成"1日所在自然周"（跨到上月），
                     # 此类句式由规则解析精确给出该月内第 N 个自然周（不跨月）。
                     ov = nth_week_range(state["instruction"], anchor)
@@ -77,12 +103,14 @@ def build_app(con: sqlite3.Connection):
                     return {"intent": intent.model_dump(),
                             "notes": [intent.message + "（LLM 解析）"]}
                 except Exception as e:
-                    # LLM 不可用/失败 → 回退规则通道，保证可用性
-                    state["notes"].append(f"LLM 解析失败，已回退规则通道：{e}")
-            intent = safe
-            return {"intent": intent.model_dump(), "notes": [intent.message]}
+                    # LLM 不可用/失败 → 回退规则通道，保证可用性。
+                    # 注意：回退说明必须随返回值一起提交，不能只 mutate state["notes"]
+                    # （返回值中的 notes 会覆盖 state 上的就地修改，导致回退事实丢失）。
+                    return {"intent": safe.model_dump(),
+                            "notes": [safe.message, f"LLM 解析失败，已回退规则通道：{e}"]}
+            return {"intent": safe.model_dump(), "notes": [safe.message]}
         except Exception as e:
-            return {"error": f"意图解析失败：{e}"}
+            return {"error": f"意图解析失败：{e}", "error_code": "internal_error"}
 
     def _execute(state: AgentState):
         if state.get("error"):
@@ -127,6 +155,7 @@ def run(instruction: str, con: sqlite3.Connection, anchor: Optional[date] = None
     init: AgentState = {
         "instruction": instruction,
         "anchor": anchor.isoformat() if anchor else None,
-        "notes": [], "intent": None, "bundle": None, "report": None, "error": None,
+        "notes": [], "intent": None, "bundle": None, "report": None,
+        "error": None, "error_code": None,
     }
     return app.invoke(init)

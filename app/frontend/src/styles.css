@@ -694,6 +694,12 @@ select.input {
   color: #791f1f;
   border: 1px solid #f3c9c4;
 }
+/* 安全网关拦截 / 指令不合规：用警示色而非错误色，语义是"请改写指令"而非系统故障 */
+.alert.warn {
+  background: #faeeda;
+  color: #633806;
+  border: 1px solid #f0d9a8;
+}
 .alert pre {
   white-space: pre-wrap;
   margin: 6px 0 0;

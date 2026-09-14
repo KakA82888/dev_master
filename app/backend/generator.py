@@ -48,6 +48,9 @@ def run_generation(report_id: int) -> None:
         if result.get("error"):
             rep.status = STATUS_FAILED
             rep.error = result["error"]
+            # 保留原因码：前端据此区分「安全网关拦截」（引导用户改写指令）
+            # 与「生成链路故障」（提示重试/排查），避免一律显示"生成失败"
+            rep.error_code = result.get("error_code") or "generation_error"
             db.commit()
             return
 
@@ -67,6 +70,7 @@ def run_generation(report_id: int) -> None:
             if rep2:
                 rep2.status = STATUS_FAILED
                 rep2.error = str(e)
+                rep2.error_code = "internal_error"
                 db.commit()
         except Exception:
             pass

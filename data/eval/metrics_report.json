@@ -126,11 +126,11 @@
     "accuracy_estimate": 100.0
   },
   "performance": {
-    "runs": 5,
+    "runs": 10,
     "failed": 0,
-    "mean_sec": 0.199,
-    "p95_sec": 0.026,
-    "max_sec": 0.951,
+    "mean_sec": 0.095,
+    "p95_sec": 0.038,
+    "max_sec": 0.838,
     "sm3_pass": true,
     "sm5_pass": true
   }

@@ -117,8 +117,13 @@ def month_nth_week(y: int, m: int, n: int) -> tuple[date, date]:
 
 
 # ---------- 单日期解析 ----------
-def _resolve_single_date(seg: str, anchor: date) -> date | None:
-    """从片段中解析单个日期；无日期返回 None。含日号的绝对日期优先。"""
+def _resolve_single_date(seg: str, anchor: date, year_hint: int | None = None) -> date | None:
+    """从片段中解析单个日期；无日期返回 None。含日号的绝对日期优先。
+
+    year_hint：省略年份时的默认年份（用于"去年3月5日"这类年相对词场景），
+    缺省回退到 anchor.year。
+    """
+    y_default = year_hint if year_hint is not None else anchor.year
     m = re.search(r"(\d{2,4})年(\d{1,2})月(\d{1,2})[日号]?", seg)
     if m:
         return _mkdate(_norm_year(int(m.group(1))), int(m.group(2)), int(m.group(3)))
@@ -127,11 +132,11 @@ def _resolve_single_date(seg: str, anchor: date) -> date | None:
         return _mkdate(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     m = re.search(r"(\d{1,2})月(\d{1,2})[日号]", seg)
     if m:
-        return _mkdate(anchor.year, int(m.group(1)), int(m.group(2)))
+        return _mkdate(y_default, int(m.group(1)), int(m.group(2)))
     # 省略"日/号"的口语写法，如"11月22"
     m = re.search(r"(?<!\d)(\d{1,2})月(\d{1,2})(?!\d)", seg)
     if m:
-        return _mkdate(anchor.year, int(m.group(1)), int(m.group(2)))
+        return _mkdate(y_default, int(m.group(1)), int(m.group(2)))
     return None
 
 
@@ -198,9 +203,20 @@ def detect_country(text: str) -> str | None:
 
 
 def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, date]:
+    # 0.0) 年相对词（今年/去年/本年/上一年）：先确定"基准年"，供后续规则复用。
+    #      必须与 LLM 提示词口径一致（提示词已声明支持"今年/去年"），否则 LLM 不可用
+    #      回退规则通道时，同一指令会解析出完全不同的区间。
+    ym = re.search(r"(今年|本年|去年|上一年)", text)
+    year_hint = None
+    if ym:
+        base_year = anchor.year if ym.group(1) in ("今年", "本年") else anchor.year - 1
+        if not re.search(r"(?<!\d)\d{1,2}\s*月", text):
+            return date(base_year, 1, 1), date(base_year, 12, 31)  # 未提月份 → 整年
+        year_hint = base_year
+
     # 0) 绝对日期（带日号）优先于整月规则，避免"2011年11月22日"被误判为整月
     if _has_explicit_day(text):
-        sd = _resolve_single_date(text, anchor)
+        sd = _resolve_single_date(text, anchor, year_hint)
         if sd and not re.search(r"(到|至|~|—|–)", text):
             return (sd, sd)
 
@@ -213,8 +229,8 @@ def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, dat
     # 1) 显式区间：到 / 至 / ~ / —
     sep = re.search(r"(到|至|~|—|–)", text)
     if sep:
-        s = _resolve_single_date(text[: sep.start()], anchor)
-        e = _resolve_single_date(text[sep.end():], anchor)
+        s = _resolve_single_date(text[: sep.start()], anchor, year_hint)
+        e = _resolve_single_date(text[sep.end():], anchor, year_hint)
         if s and not e:  # 右端仅给出"D日"或裸数字，借用左端年月
             right = text[sep.end():]
             m = re.search(r"(\d{1,2})[日号]", right)
@@ -226,10 +242,22 @@ def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, dat
                     e = _mkdate(s.year, s.month, int(m.group(1)))
         if s and e:
             return (min(s, e), max(s, e))
+    # 1.5) 年相对词 + 纯月份区间（如"去年1月到3月的月报"）：两端只有月份，用基准年构造整月区间
+    if year_hint is not None and sep is not None:
+        months = re.findall(r"(?<!\d)(\d{1,2})\s*月", text)
+        if len(months) >= 2:
+            s1, e1 = month_range(year_hint, int(months[0]))
+            s2, e2 = month_range(year_hint, int(months[-1]))
+            return (min(s1, s2), max(e1, e2))
     # 2) 整月：YYYY年MM月 或 YYYY-MM（非完整日期）；年份允许省略前两位（"10年4月"）
     m = re.search(r"(\d{2,4})年(\d{1,2})月", text)
     if m:
         return month_range(_norm_year(int(m.group(1))), int(m.group(2)))
+    # 2.5) 年相对词 + 月（如"去年3月"）：用基准年构造整月区间
+    if year_hint is not None:
+        mo = re.search(r"(?<!\d)(\d{1,2})\s*月", text)
+        if mo:
+            return month_range(year_hint, int(mo.group(1)))
     if re.search(r"\d{4}-\d{1,2}(?!-\d)", text):
         m = re.search(r"(\d{4})-(\d{1,2})", text)
         return month_range(int(m.group(1)), int(m.group(2)))
@@ -251,7 +279,7 @@ def parse_date_range(text: str, rt: str | None, anchor: date) -> tuple[date, dat
     if re.search(r"今天|今日", text):
         return (anchor, anchor)
     # 6) 单绝对日
-    sd = _resolve_single_date(text, anchor)
+    sd = _resolve_single_date(text, anchor, year_hint)
     if sd:
         return (sd, sd)
     # 7) 兜底（按报告类型推断区间）
@@ -308,7 +336,17 @@ def parse(text: str, anchor: date | None = None) -> Intent:
 
 def parse_safe(text: str, anchor: date | None = None) -> Intent:
     """解析 + 安全网关。被拦截时返回 need_clarify=True 且 blocked=<原因码>。"""
-    from scripts.agent.guard import check as guard_check  # 局部导入避免循环依赖
+    # 局部导入避免循环依赖；兼容两种加载方式：
+    # ① sys.path 顶层为 scripts/agent（orchestrator / generator 调用场景）→ import guard
+    # ② 以项目根为路径走包名导入（pytest 收集、包方式引用场景）→ scripts.agent.guard
+    # 原先只写第二种，依赖"启动时 cwd 恰好是项目根"，从别处启动会 ImportError。
+    try:
+        from guard import check as guard_check, range_warning as guard_range_warning
+    except ImportError:  # pragma: no cover
+        from scripts.agent.guard import (
+            check as guard_check,
+            range_warning as guard_range_warning,
+        )
 
     ok, code, reason = guard_check(text)
     if not ok:
@@ -325,6 +363,11 @@ def parse_safe(text: str, anchor: date | None = None) -> Intent:
             it.need_clarify = True
             it.blocked = code2
             it.message = reason2
+        else:
+            # 部分越界（有交集但未完全覆盖）不拒绝，但必须显式提示，不能静默截断
+            warn = guard_range_warning(it.start, it.end)
+            if warn:
+                it.message = f"{it.message}；{warn}"
     return it
 
 

@@ -1,7 +1,7 @@
 // 页面：Login / Workbench / History + App 外壳与 hash 路由
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReportDetail, ReportSummary } from "./types";
-import { TYPE_LABEL, STATUS_LABEL } from "./types";
+import { TYPE_LABEL, STATUS_LABEL, isGateBlocked, failureTitle } from "./types";
 import { api, ApiError, getUsername, humanTime, setSession, clearSession } from "./api";
 import { toast, StatusBadge, EmptyState, SkeletonLines, Spinner } from "./ui";
 import { ReportViewer, ReportActions } from "./report";
@@ -228,7 +228,15 @@ export function WorkbenchPage({
           setGenerating(null);
           localStorage.removeItem(GENERATING_KEY);
           if (r.status === "drafted") toast.info("报告已生成，请审阅确认");
-          else if (r.status === "failed") toast.error("生成失败");
+          else if (r.status === "failed") {
+            // 区分「安全网关拦截」（应改写指令）与「技术故障」（应重试/排查），
+            // 避免一律提示"生成失败"导致用户误判为系统故障而反复重试
+            if (isGateBlocked(r.error_code)) {
+              toast.error(`${failureTitle(r.error_code)}：${r.error ?? "请改写指令后重试"}`);
+            } else {
+              toast.error(`生成失败${r.error ? "：" + r.error : ""}`);
+            }
+          }
           loadRecent();
         }
       } catch {

@@ -52,9 +52,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         sub = payload.get("sub")
         if sub is None:
             raise cred_exc
-    except JWTError:
+        user_id = int(sub)
+    except (JWTError, TypeError, ValueError):
+        # sub 非数字（异常/旧格式 token）应判为无效凭证并返回 401，
+        # 而不是让 int() 的 ValueError 冒泡成 500
         raise cred_exc
-    user = db.get(User, int(sub))
+    user = db.get(User, user_id)
     if user is None:
         raise cred_exc
     return CurrentUser.model_validate(user)

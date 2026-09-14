@@ -1,7 +1,7 @@
 // 报告预览：markdown 块 → 组件化渲染；异常行/异常区样式化；操作条对齐后端守卫
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReportDetail } from "./types";
-import { TYPE_LABEL, STATUS_LABEL } from "./types";
+import { TYPE_LABEL, STATUS_LABEL, isGateBlocked, failureTitle } from "./types";
 import { api, ApiError, humanTime } from "./api";
 import { parseBlocks, splitInline, type Block } from "./markdown";
 import { toast, StatusBadge, Modal, Spinner } from "./ui";
@@ -292,8 +292,11 @@ export function ReportActions({
         {busy === "delete" ? <Spinner size={14} /> : "删除"}
       </button>
       {st === "failed" && report.error && (
-        <span className="alert err small" style={{ flex: 1 }}>
-          失败原因：{report.error}
+        <span
+          className={`alert small ${isGateBlocked(report.error_code) ? "warn" : "err"}`}
+          style={{ flex: 1 }}
+        >
+          {failureTitle(report.error_code)}：{report.error}
         </span>
       )}
 
