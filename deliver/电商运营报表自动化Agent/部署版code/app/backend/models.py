@@ -1,5 +1,6 @@
 """ORM 模型：用户、报告记录。"""
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from .db import Base
@@ -12,6 +13,10 @@ STATUS_CONFIRMED = "confirmed"
 STATUS_ARCHIVED = "archived"
 STATUS_FAILED = "failed"
 
+# 角色（对应任务书 §6.2「按角色控制数据访问权限」）
+ROLE_ADMIN = "admin"   # 可查看与管理全部用户的报告
+ROLE_USER = "user"     # 仅可访问自己的报告
+
 
 class User(Base):
     __tablename__ = "users"
@@ -19,6 +24,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(64), unique=True, index=True, nullable=False)
     hashed_password = Column(String(128), nullable=False)
+    # 新注册用户默认 user；种子账号由启动逻辑提升为 admin（见 main.lifespan）
+    role = Column(String(16), default=ROLE_USER, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -44,3 +51,6 @@ class Report(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # 归属用户：列表/详情接口需带出 owner，供管理员视角区分报告归属
+    owner = relationship("User", lazy="joined")

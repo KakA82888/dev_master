@@ -15,33 +15,53 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import SEED_PASSWORD, SEED_USERNAME
 from .db import SessionLocal, engine, init_db
-from .models import User
+from .models import ROLE_ADMIN, User
 from .routers import auth, reports
 from .security import hash_password
 
 
-def _ensure_columns() -> None:
+def _ensure_columns() -> bool:
     """轻量列迁移：SQLite 的 create_all 不会为已存在的表补列。
 
-    开发库/生产库可能是旧版本创建的，缺少后加的 reports.error_code，
+    开发库/生产库可能是旧版本创建的，缺少后加的 reports.error_code / users.role，
     升级后直接查询会报 no such column，故此处按需要 ALTER 补列（幂等）。
+
+    返回：本次是否新建了 users.role 列（供启动逻辑决定是否提升既有种子账号）。
     """
+    role_added = False
     with engine.connect() as con:
-        cols = {row[1] for row in con.exec_driver_sql("PRAGMA table_info(reports)")}
-        if cols and "error_code" not in cols:
+        rep_cols = {row[1] for row in con.exec_driver_sql("PRAGMA table_info(reports)")}
+        if rep_cols and "error_code" not in rep_cols:
             con.exec_driver_sql("ALTER TABLE reports ADD COLUMN error_code VARCHAR(32)")
-            con.commit()
+        user_cols = {row[1] for row in con.exec_driver_sql("PRAGMA table_info(users)")}
+        if user_cols and "role" not in user_cols:
+            # 历史用户统一回填为普通用户；种子账号由下方启动逻辑提升为 admin
+            con.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'"
+            )
+            role_added = True
+        con.commit()
+    return role_added
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    _ensure_columns()
+    role_added = _ensure_columns()
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
-            db.add(User(username=SEED_USERNAME, hashed_password=hash_password(SEED_PASSWORD)))
+            # 种子账号设为管理员，便于演示「按角色控制数据访问权限」（任务书 §6.2）
+            db.add(User(username=SEED_USERNAME,
+                        hashed_password=hash_password(SEED_PASSWORD),
+                        role=ROLE_ADMIN))
             db.commit()
+        elif role_added:
+            # 本次刚补出 role 列：既有库中的种子账号提升为管理员，保证演示可用
+            seed = db.query(User).filter(User.username == SEED_USERNAME).first()
+            if seed is not None:
+                seed.role = ROLE_ADMIN
+                db.commit()
     finally:
         db.close()
     yield

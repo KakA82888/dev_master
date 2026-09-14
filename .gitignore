@@ -34,3 +34,6 @@ docs/*.zip
 
 # git filter-branch 历史重写产生的临时目录
 .git-rewrite/
+
+# HTTPS 自签证书（含私钥，严禁入库）
+certs/

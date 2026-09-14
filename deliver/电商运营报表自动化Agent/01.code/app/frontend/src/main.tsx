@@ -3,7 +3,8 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./tokens.css";
 import "./styles.css";
-import { getToken } from "./api";
+import { api, getToken } from "./api";
+import type { UserInfo } from "./types";
 import { ToastHost } from "./ui";
 import { AppShell, HistoryPage, LoginPage, WorkbenchPage } from "./pages";
 
@@ -16,10 +17,31 @@ function App() {
   const [authed, setAuthed] = useState<boolean>(() => Boolean(getToken()));
   const [route, setRoute] = useState<string>(readHash());
   const [pendingReportId, setPendingReportId] = useState<number | null>(null);
+  const [me, setMe] = useState<UserInfo | null>(null);
 
   useEffect(() => {
     window.location.hash = route === "history" ? "#/history" : "#/workbench";
   }, [route]);
+
+  // 已登录时拉取当前用户信息（含角色），用于控制管理员入口的展示
+  useEffect(() => {
+    if (!authed) {
+      setMe(null);
+      return;
+    }
+    let alive = true;
+    api
+      .me()
+      .then((u) => {
+        if (alive) setMe(u);
+      })
+      .catch(() => {
+        /* 拉取失败不阻断使用，仅不展示管理员入口 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [authed]);
 
   if (!authed) {
     return (
@@ -39,6 +61,7 @@ function App() {
     <>
       <AppShell
         route={route}
+        user={me}
         onRoute={(r) => {
           setRoute(r);
           if (r === "history") setPendingReportId(null);
@@ -50,6 +73,7 @@ function App() {
       >
         {route === "history" ? (
           <HistoryPage
+            me={me}
             onOpenReport={(id) => {
               setPendingReportId(id);
               setRoute("workbench");

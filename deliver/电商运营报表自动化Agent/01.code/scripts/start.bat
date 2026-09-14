@@ -25,6 +25,16 @@ call npm run build
 popd
 
 REM --- Step 2: start backend (serves API + dist) ------------------------------
+REM TLS: when certs\server.key and certs\server.crt exist, start with HTTPS
+REM      (required by task spec 6.2 - encrypted transport).
 :start
-echo [2/2] Starting backend on http://%HOST%:%PORT%  (Ctrl+C to stop)
+if not exist "certs\server.key" goto http
+if not exist "certs\server.crt" goto http
+echo [2/2] Starting backend on https://%HOST%:%PORT%  (TLS enabled, Ctrl+C to stop)
+python -m uvicorn app.backend.main:app --host %HOST% --port %PORT% --ssl-keyfile certs\server.key --ssl-certfile certs\server.crt
+goto :eof
+
+:http
+echo [2/2] Starting backend on http://%HOST%:%PORT%  (no certs - plain HTTP)
 python -m uvicorn app.backend.main:app --host %HOST% --port %PORT%
+goto :eof

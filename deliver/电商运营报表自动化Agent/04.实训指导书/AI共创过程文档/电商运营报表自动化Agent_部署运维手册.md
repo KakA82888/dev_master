@@ -63,22 +63,45 @@ cp .env.example .env            # 复制后按实填写
 
 ## 5. 启动
 
-### 5.1 生产/演示模式（推荐，单端口）
+### 5.1 生产/演示模式（推荐，单端口 + HTTPS）
 
-后端在 :8000 同时提供 API 与前端静态页面，浏览器访问 `http://127.0.0.1:8000` 即为完整应用：
+后端在 :8000 同时提供 API 与前端静态页面，浏览器访问 `https://127.0.0.1:8000` 即为完整应用。
+HTTPS 对应任务书 §6.2「HTTPS 加密传输」要求。
+
+**步骤 1：生成本机自签证书**（首次部署执行一次；`certs/` 已被 `.gitignore` 忽略）
 
 ```bash
-python -m uvicorn app.backend.main:app --host 127.0.0.1 --port 8000
+mkdir -p certs && openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -keyout certs/server.key -out certs/server.crt \
+  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 ```
 
-一键脚本（自动判断是否需要构建前端）：
+**步骤 2：一键启动**（检测到 `certs/` 时脚本自动启用 TLS）
 
 ```bash
 bash scripts/start.sh           # Linux/macOS/Git Bash
 scripts\start.bat               # Windows cmd
 ```
 
-### 5.2 开发模式（前后端分离，前端热更新）
+或手动启动：
+
+```bash
+python -m uvicorn app.backend.main:app --host 127.0.0.1 --port 8000 \
+  --ssl-keyfile certs/server.key --ssl-certfile certs/server.crt
+```
+
+> 自签证书首次访问浏览器会提示「不安全」，选择「继续访问」即可（本机/内网演示属正常）。
+> 若部署到公网服务器，请将 `certs/server.crt` 替换为 CA 签发证书，或按附录《部署与 Nginx_HTTPS 配置》由 Nginx 终结 TLS。
+
+### 5.2 无证书模式（纯 HTTP，仅限内网快速验证）
+
+删除或移走 `certs/` 后执行启动脚本会自动回退为 HTTP：
+
+```bash
+python -m uvicorn app.backend.main:app --host 127.0.0.1 --port 8000
+```
+
+### 5.3 开发模式（前后端分离，前端热更新）
 
 ```bash
 # 终端1：后端
@@ -87,7 +110,7 @@ python -m uvicorn app.backend.main:app --host 127.0.0.1 --port 8000 --reload
 cd app/frontend && npm run dev   # http://127.0.0.1:5173
 ```
 
-### 5.3 停止
+### 5.4 停止
 
 - 前台启动：`Ctrl + C`
 - 后台启动：记录 PID 后 `kill <pid>`；Windows 可用 `netstat -ano | findstr :8000` 查 PID 后 `taskkill /PID <pid> /F`
@@ -136,10 +159,10 @@ python scripts/eval/eval_metrics.py --runs 10
 | 异常如实标注 | ✅ 已实现（阈值表驱动，不臆测原因） | 保持 |
 | 提示词注入防护 | ✅ 已实现（`scripts/agent/guard.py`，五类拦截） | 保持；新增指令模式时同步扩充规则 |
 | 敏感内容过滤 | 🟡 部分（网关拦截伪造数值/越权） | 接入 LLM 撰写结论时需补输出侧过滤 |
-| HTTPS 加密传输 | ⬜ 开发态为 HTTP | 前置 Nginx/Caddy 反代并启用 TLS；内网演示可豁免 |
+| HTTPS 加密传输 | ✅ 已实现（`certs/` 自签证书 + uvicorn 直启 TLS，启动脚本自动检测启用，见 §5.1） | 公网部署时替换为 CA 签发证书，或由 Nginx 终结 TLS |
 | 数据库存储加密 | ⬜ 明文 SQLite | 敏感环境改用 SQLCipher，或限制文件访问权限 |
 | 密钥管理 | 🟡 `.env` 本地存放、已 gitignore | 生产改用密钥管理服务，定期轮换 API Key |
-| 角色权限 | 🟡 单角色（报告归属校验已实现：跨用户返回 404） | 如需多角色，扩展 `User.role` 与路由守卫 |
+| 角色权限 | ✅ 已实现（`admin` / `user` 双角色：管理员可用 `?scope=all` 查看与管理全部用户报告，普通用户仅限本人；越权访问返回 404、越权列表返回 403） | 如需更多角色，按同一模式扩展 `User.role` 与路由守卫 |
 
 > 改 `guard.py` 后**必须重启服务**才生效（Python 模块进程内缓存）。
 
@@ -149,7 +172,9 @@ python scripts/eval/eval_metrics.py --runs 10
 python -m pytest -q                                   # 全量测试
 python scripts/eval/smoke_http.py                     # 后端 HTTP 冒烟
 python scripts/build_corpus.py                        # 重建报表语料库 corpus/
-python -m uvicorn app.backend.main:app --port 8000    # 启动
+python -m uvicorn app.backend.main:app --port 8000    # 启动（HTTP）
+python -m uvicorn app.backend.main:app --port 8000 \
+  --ssl-keyfile certs/server.key --ssl-certfile certs/server.crt   # 启动（HTTPS）
 ```
 
 ## 11. 常见故障排查

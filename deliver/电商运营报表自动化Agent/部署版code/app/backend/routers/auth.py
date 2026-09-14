@@ -1,11 +1,11 @@
-"""认证路由：注册、登录。"""
+"""认证路由：注册、登录、当前用户信息。"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import User
-from ..schemas import Token, UserCreate, UserLogin
-from ..security import authenticate, create_access_token, hash_password
+from ..schemas import CurrentUser, Token, UserCreate, UserLogin
+from ..security import authenticate, create_access_token, get_current_user, hash_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -31,3 +31,9 @@ def login(body: UserLogin, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误"
         )
     return Token(access_token=create_access_token(str(user.id)))
+
+
+@router.get("/me", response_model=CurrentUser)
+def me(current_user: CurrentUser = Depends(get_current_user)):
+    """返回当前登录用户信息（含角色），供前端按角色渲染入口。"""
+    return current_user

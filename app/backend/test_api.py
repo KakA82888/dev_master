@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.backend.main import app
 from app.backend.db import SessionLocal, init_db
-from app.backend.models import Report, User
+from app.backend.models import ROLE_ADMIN, Report, User
+from app.backend.security import hash_password
 
 init_db()
 
@@ -37,6 +38,23 @@ def auth_headers(client):
     assert r.status_code == 200, r.text
     token = r.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def _login(client, username: str, password: str) -> dict:
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def _make_admin(client, username: str = "boss", password: str = "admin123") -> dict:
+    """直接建一个 admin 用户并返回其鉴权头（注册接口固定产生 user 角色）。"""
+    db = SessionLocal()
+    try:
+        db.add(User(username=username, hashed_password=hash_password(password), role=ROLE_ADMIN))
+        db.commit()
+    finally:
+        db.close()
+    return _login(client, username, password)
 
 
 def test_health(client):
@@ -117,3 +135,46 @@ def test_cannot_access_others_report(client, auth_headers):
     other = client.post("/api/auth/register", json={"username": "eve", "password": "pw123456"}).json()["access_token"]
     oh = {"Authorization": f"Bearer {other}"}
     assert client.get(f"/api/reports/{rid}", headers=oh).status_code == 404
+
+
+# ---------------- 角色权限（RBAC，对应任务书 §6.2）----------------
+
+
+def test_me_returns_role(client, auth_headers):
+    """新注册用户默认 user 角色。"""
+    r = client.get("/api/auth/me", headers=auth_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["username"] == "alice"
+    assert body["role"] == "user"
+
+
+def test_scope_all_forbidden_for_normal_user(client, auth_headers):
+    """普通用户请求全量列表应被拒绝（403）。"""
+    r = client.get("/api/reports", params={"scope": "all"}, headers=auth_headers)
+    assert r.status_code == 403
+
+
+def test_normal_user_lists_only_own_reports(client, auth_headers):
+    """默认 scope=self 只返回自己的报告，看不到管理员的报告。"""
+    client.post("/api/reports/generate", params={"sync": True},
+                json={"instruction": "生成昨日日报"}, headers=auth_headers)
+    admin_h = _make_admin(client)
+    client.post("/api/reports/generate", params={"sync": True},
+                json={"instruction": "生成本月月报"}, headers=admin_h)
+    mine = client.get("/api/reports", headers=auth_headers).json()
+    assert len(mine) == 1
+
+
+def test_admin_can_access_all_reports(client, auth_headers):
+    """管理员可列出并访问其他用户的报告，且详情带出归属信息。"""
+    r = client.post("/api/reports/generate", params={"sync": True},
+                    json={"instruction": "生成昨日日报"}, headers=auth_headers)
+    rid = r.json()["id"]
+    admin_h = _make_admin(client)
+    allr = client.get("/api/reports", params={"scope": "all"}, headers=admin_h)
+    assert allr.status_code == 200
+    assert any(x["id"] == rid for x in allr.json())
+    g = client.get(f"/api/reports/{rid}", headers=admin_h)
+    assert g.status_code == 200
+    assert g.json()["owner"]["username"] == "alice"

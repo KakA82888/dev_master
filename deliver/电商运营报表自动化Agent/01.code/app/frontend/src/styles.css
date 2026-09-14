@@ -553,6 +553,17 @@ h3 {
   gap: 6px;
 }
 
+/* 角色徽章：仅管理员显示（对应任务书 §6.2 按角色控制访问权限） */
+.role-badge {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #faeeda;
+  color: #633806;
+  border: 1px solid #f0d9a8;
+}
+
 /* ---------- 认证页 ---------- */
 .auth-wrap {
   min-height: 100vh;

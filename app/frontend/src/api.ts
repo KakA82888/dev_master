@@ -1,5 +1,5 @@
 // 后端 API 客户端（fetch 封装）。401 统一抛出，由页面层回登录。
-import type { ReportDetail, ReportSummary } from "./types";
+import type { ReportDetail, ReportSummary, UserInfo } from "./types";
 
 const TOKEN_KEY = "ra_token";
 const USER_KEY = "ra_user";
@@ -68,6 +68,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+  // 当前用户信息（含角色），登录后拉取以决定是否展示管理员入口
+  me: () => http<UserInfo>("/api/auth/me"),
 
   generate: (instruction: string) =>
     http<ReportDetail>("/api/reports/generate", {
@@ -75,8 +77,8 @@ export const api = {
       body: JSON.stringify({ instruction }),
     }),
   getReport: (id: number) => http<ReportDetail>(`/api/reports/${id}`),
-  listReports: (limit = 50) =>
-    http<ReportSummary[]>(`/api/reports?limit=${limit}`),
+  listReports: (limit = 50, scope: "self" | "all" = "self") =>
+    http<ReportSummary[]>(`/api/reports?limit=${limit}&scope=${scope}`),
   confirm: (id: number) =>
     http<ReportDetail>(`/api/reports/${id}/confirm`, { method: "POST" }),
   archive: (id: number) =>

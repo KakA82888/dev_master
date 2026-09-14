@@ -24,6 +24,8 @@ class Token(BaseModel):
 class CurrentUser(BaseModel):
     id: int
     username: str
+    # 角色：admin 可访问全部用户报告；user 仅可访问自己的（任务书 §6.2）
+    role: str = "user"
 
     model_config = {"from_attributes": True}
 
@@ -46,6 +48,8 @@ class ReportSummary(BaseModel):
     # 列表页也需要失败原因与原因码：用于把「安全网关拦截」与「技术故障」区分提示
     error: Optional[str] = None
     error_code: Optional[str] = None
+    # 报告归属（管理员视角需要区分不同用户；普通用户为自己的信息，不属敏感数据）
+    owner: Optional[CurrentUser] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -64,6 +68,8 @@ class ReportOut(BaseModel):
     status: str
     error: Optional[str] = None
     error_code: Optional[str] = None
+    # 报告归属（管理员视角需要区分不同用户）
+    owner: Optional[CurrentUser] = None
     version: int = 1
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

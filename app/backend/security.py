@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import ALGORITHM, ACCESS_TOKEN_EXPIRE, SECRET_KEY
 from .db import SessionLocal, get_db
-from .models import User
+from .models import ROLE_ADMIN, User
 from .schemas import CurrentUser
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -61,3 +61,13 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise cred_exc
     return CurrentUser.model_validate(user)
+
+
+def require_admin(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """管理员专用依赖：非 admin 角色返回 403（任务书 §6.2 按角色控制访问权限）。"""
+    if current_user.role != ROLE_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限",
+        )
+    return current_user

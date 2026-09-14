@@ -1,7 +1,7 @@
 // 页面：Login / Workbench / History + App 外壳与 hash 路由
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReportDetail, ReportSummary } from "./types";
-import { TYPE_LABEL, STATUS_LABEL, isGateBlocked, failureTitle } from "./types";
+import type { ReportDetail, ReportSummary, UserInfo } from "./types";
+import { TYPE_LABEL, STATUS_LABEL, isGateBlocked, failureTitle, isAdmin } from "./types";
 import { api, ApiError, getUsername, humanTime, setSession, clearSession } from "./api";
 import { toast, StatusBadge, EmptyState, SkeletonLines, Spinner } from "./ui";
 import { ReportViewer, ReportActions } from "./report";
@@ -100,11 +100,13 @@ export function LoginPage({ onLogin }: { onLogin: (username: string) => void }) 
 /* ================= 顶部外壳 ================= */
 export function AppShell({
   route,
+  user,
   onRoute,
   onLogout,
   children,
 }: {
   route: string;
+  user: UserInfo | null;
   onRoute: (r: string) => void;
   onLogout: () => void;
   children: React.ReactNode;
@@ -130,6 +132,11 @@ export function AppShell({
           <div className="spacer" />
           <span className="user-chip">
             <span aria-hidden="true">👤</span> {getUsername()}
+            {isAdmin(user) && (
+              <span className="role-badge" title="管理员：可查看全部用户的报告">
+                管理员
+              </span>
+            )}
           </span>
           <button
             className="btn btn-ghost btn-sm"
@@ -381,7 +388,14 @@ export function WorkbenchPage({
 }
 
 /* ================= 历史 ================= */
-export function HistoryPage({ onOpenReport }: { onOpenReport: (id: number) => void }) {
+export function HistoryPage({
+  onOpenReport,
+  me,
+}: {
+  onOpenReport: (id: number) => void;
+  me: UserInfo | null;
+}) {
+  const admin = isAdmin(me);
   const [list, setList] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [type, setType] = useState("");
@@ -389,11 +403,13 @@ export function HistoryPage({ onOpenReport }: { onOpenReport: (id: number) => vo
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
   const [markets, setMarkets] = useState<string[]>([]);
+  // 管理员可切换查看范围（对应任务书 §6.2「按角色控制数据访问权限」）
+  const [scope, setScope] = useState<"self" | "all">("self");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await api.listReports(200);
+      const rows = await api.listReports(200, admin ? scope : "self");
       setList(rows);
       const ms = Array.from(new Set(rows.map((r) => (r.market && r.market !== "ALL" ? r.market : "全市场"))));
       setMarkets(ms);
@@ -402,7 +418,7 @@ export function HistoryPage({ onOpenReport }: { onOpenReport: (id: number) => vo
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [admin, scope]);
 
   useEffect(() => {
     load();
@@ -422,6 +438,17 @@ export function HistoryPage({ onOpenReport }: { onOpenReport: (id: number) => vo
       <section className="card">
         <h2 className="card-title">历史报告</h2>
         <div className="filter-row">
+          {admin && (
+            <select
+              className="input"
+              value={scope}
+              onChange={(e) => setScope(e.target.value as "self" | "all")}
+              aria-label="数据范围"
+            >
+              <option value="self">仅我的报告</option>
+              <option value="all">全部用户报告</option>
+            </select>
+          )}
           <input
             className="input"
             style={{ flex: 1, minWidth: 180 }}
@@ -465,6 +492,7 @@ export function HistoryPage({ onOpenReport }: { onOpenReport: (id: number) => vo
                 <div className="list-main">
                   <div className="list-title">{r.instruction}</div>
                   <div className="list-sub">
+                    {admin && r.owner ? `${r.owner.username} · ` : ""}
                     {(r.report_type && TYPE_LABEL[r.report_type]) || "—"} ·{" "}
                     {r.market && r.market !== "ALL" ? r.market : "全市场"} ·{" "}
                     {r.period_start ? `${r.period_start}~${r.period_end}` : "—"} · {humanTime(r.created_at)}

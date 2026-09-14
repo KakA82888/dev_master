@@ -11,6 +11,7 @@ from ..db import get_db
 from ..exporters import export_docx, export_markdown, sanitize_filename
 from ..generator import run_generation
 from ..models import (
+    ROLE_ADMIN,
     Report,
     STATUS_ARCHIVED,
     STATUS_CONFIRMED,
@@ -27,8 +28,15 @@ _ALLOW_SYNC = os.getenv("APP_ALLOW_SYNC", "").strip().lower() in ("1", "true", "
 
 
 def _get_owned(report_id: int, db: Session, current_user: CurrentUser) -> Report:
+    """取报告并做归属校验（任务书 §6.2 按角色控制数据访问权限）。
+
+    - 普通用户：仅可访问自己的报告；越权一律按 404 返回，不泄露资源是否存在
+    - 管理员：可访问任何用户的报告
+    """
     rep = db.get(Report, report_id)
-    if not rep or rep.user_id != current_user.id:
+    if not rep:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    if rep.user_id != current_user.id and current_user.role != ROLE_ADMIN:
         raise HTTPException(status_code=404, detail="报告不存在")
     return rep
 
@@ -64,14 +72,19 @@ def list_reports(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
     limit: int = Query(50, le=200),
+    scope: str = Query("self", pattern="^(self|all)$", description="all 仅管理员可用"),
 ):
-    return (
-        db.query(Report)
-        .filter(Report.user_id == current_user.id)
-        .order_by(desc(Report.created_at))
-        .limit(limit)
-        .all()
-    )
+    """报告列表。
+
+    - scope=self（默认）：仅返回当前用户自己的报告
+    - scope=all：返回全部用户的报告，仅管理员可用（普通用户调用返回 403）
+    """
+    if scope == "all" and current_user.role != ROLE_ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    q = db.query(Report)
+    if scope != "all":
+        q = q.filter(Report.user_id == current_user.id)
+    return q.order_by(desc(Report.created_at)).limit(limit).all()
 
 
 @router.get("/{report_id}", response_model=ReportOut)

@@ -7,6 +7,18 @@ export type ReportStatus =
   | "archived"
   | "failed";
 
+export interface UserInfo {
+  id: number;
+  username: string;
+  role: string;
+}
+
+export const ROLE_ADMIN = "admin";
+
+export function isAdmin(user?: UserInfo | null): boolean {
+  return !!user && user.role === ROLE_ADMIN;
+}
+
 export interface ReportSummary {
   id: number;
   instruction: string;
@@ -17,6 +29,8 @@ export interface ReportSummary {
   status: string;
   error?: string | null;
   error_code?: string | null;
+  // 报告归属：管理员查看他人报告时用于区分（普通用户即本人，非敏感信息）
+  owner?: UserInfo | null;
   created_at?: string | null;
 }
 

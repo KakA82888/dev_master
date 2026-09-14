@@ -62,3 +62,17 @@ D:\电商\
   删除/移动中文名文件改用 **PowerShell `Remove-Item -LiteralPath`**（原生 Unicode，可靠）。
 - 恢复：`git reset -q` 取消暂存 → `git checkout HEAD -- docs` 整目录还原（已验证可用，文件全部找回）。
 - 教训：任何删除操作前先确认备份；`git status` 出现成片 ` D` 立即停止并先恢复。
+
+## 代码托管（2026-09-14 建立）
+- **远端仓库**：`git@github.com:KakA82888/dev_master.git`（SSH），分支 `main`，项目作为**仓库根**（`--force` 覆盖了 GitHub 占位 README）。
+- `.git` 经历史重写后 **68M → 1.2M**（移除了 67MB 的 TP 家具参考模板 zip）；备份 bundle 在 `D:\电商_repo_backup_20260914.bundle`。
+- 推送前自检清单：`git ls-files | grep -xE "\.env"` 须为空；密钥扫描（`sk-`/`api_key`/`Bearer`）；`git ls-files` 中无 `*.db`/`*.xlsx` 大文件。
+
+## Git 历史重写与推送要点（2026-09-14 实操）
+1. **先备份**：`git bundle create <路径>.bundle --all`（单文件含全部历史，可回滚）。
+2. **filter-branch 前索引必须干净**，否则报 `Cannot rewrite branches: Your index contains uncommitted changes` → 先 `git reset -q`。
+3. **filter-branch 收尾会 `reset --hard`**，会把工作树中「不在新 HEAD」的文件**真删掉**（不只改版本库）。若要本地保留，事后从备份恢复：
+   `git fetch <bundle> refs/heads/<br>:refs/backup-tmp/<br>` → `git restore --source=refs/backup-tmp/<br> -- '<ASCII glob>'` → `git update-ref -d refs/backup-tmp/<br>`。
+4. **pathspec 一律用 ASCII glob**（如 `'docs/*.zip'`）替代含中文的文件名，规避 2026-09-10 那类编码错配。
+5. **瘦身序列**：`git reflog expire --expire=now --all` → `git gc --prune=now`（否则旧对象仍驻留，`.git` 不会变小）。
+6. 沙箱限制：**无法创建 `refs/remotes/*` 引用**（`git status` 恒显示 `[gone]`，不影响 push 实际功能）；`.git-rewrite` 需手动清理。
