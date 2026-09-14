@@ -1,7 +1,7 @@
 // 报告预览：markdown 块 → 组件化渲染；异常行/异常区样式化；操作条对齐后端守卫
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReportDetail } from "./types";
-import { TYPE_LABEL, STATUS_LABEL, isGateBlocked, failureTitle } from "./types";
+import type { FeedbackInfo, ReportDetail } from "./types";
+import { TYPE_LABEL, STATUS_LABEL, isGateBlocked, failureTitle, FEEDBACK_LABEL } from "./types";
 import { api, ApiError, humanTime } from "./api";
 import { parseBlocks, splitInline, type Block } from "./markdown";
 import { toast, StatusBadge, Modal, Spinner } from "./ui";
@@ -194,6 +194,12 @@ export function ReportActions({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  // 修改意见（任务书 §2.2 目标 4：修改意见沉淀用于优化生成模板）
+  const [fbOpen, setFbOpen] = useState(false);
+  const [fbCategory, setFbCategory] = useState("conclusion");
+  const [fbContent, setFbContent] = useState("");
+  const [fbList, setFbList] = useState<FeedbackInfo[]>([]);
+  const [fbBusy, setFbBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const st = report.status;
   const canConfirm = st === "drafted";
@@ -208,6 +214,31 @@ export function ReportActions({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  async function openFeedback() {
+    setFbOpen(true);
+    try {
+      setFbList(await api.listFeedback(report.id));
+    } catch {
+      /* 列表加载失败不阻断提交 */
+    }
+  }
+
+  async function submitFeedback() {
+    const content = fbContent.trim();
+    if (!content || fbBusy) return;
+    setFbBusy(true);
+    try {
+      await api.createFeedback(report.id, fbCategory, content);
+      toast.success("修改意见已记录，将用于优化报告模板");
+      setFbContent("");
+      setFbList(await api.listFeedback(report.id));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "提交失败");
+    } finally {
+      setFbBusy(false);
+    }
+  }
 
   async function act(kind: "confirm" | "archive" | "delete") {
     setBusy(kind);
@@ -284,6 +315,14 @@ export function ReportActions({
         )}
       </div>
       <button
+        className="btn btn-secondary"
+        disabled={busy !== null}
+        title="提交修改意见（沉淀用于优化报告模板）"
+        onClick={openFeedback}
+      >
+        修改意见
+      </button>
+      <button
         className="btn btn-danger"
         disabled={busy !== null}
         title="删除该报告（不可恢复）"
@@ -317,6 +356,60 @@ export function ReportActions({
         onOk={() => act("delete")}
         onCancel={() => setDeleteOpen(false)}
       />
+      <Modal
+        open={fbOpen}
+        title="修改意见"
+        okText="提交意见"
+        onOk={submitFeedback}
+        onCancel={() => setFbOpen(false)}
+      >
+        <div style={{ margin: "10px 0 6px" }}>
+          <label className="muted small" htmlFor="fb-cat">
+            问题分类
+          </label>
+          <select
+            id="fb-cat"
+            className="input"
+            style={{ width: "100%", marginTop: 4 }}
+            value={fbCategory}
+            onChange={(e) => setFbCategory(e.target.value)}
+          >
+            {Object.entries(FEEDBACK_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ margin: "10px 0 6px" }}>
+          <label className="muted small" htmlFor="fb-content">
+            意见内容
+          </label>
+          <textarea
+            id="fb-content"
+            className="textarea"
+            rows={3}
+            style={{ width: "100%", marginTop: 4 }}
+            value={fbContent}
+            onChange={(e) => setFbContent(e.target.value)}
+            placeholder="例如：结论部分希望更简洁 / 退款率需标注口径"
+          />
+        </div>
+        {fbList.length > 0 && (
+          <div>
+            <p className="muted small">已记录 {fbList.length} 条：</p>
+            {fbList.map((f) => (
+              <div key={f.id} className="list-item" style={{ cursor: "default" }}>
+                <div className="list-main">
+                  <div className="list-sub">
+                    <strong>{FEEDBACK_LABEL[f.category] || f.category}</strong> · {f.content}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

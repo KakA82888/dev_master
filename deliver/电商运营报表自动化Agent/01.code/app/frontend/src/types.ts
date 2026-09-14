@@ -31,6 +31,8 @@ export interface ReportSummary {
   error_code?: string | null;
   // 报告归属：管理员查看他人报告时用于区分（普通用户即本人，非敏感信息）
   owner?: UserInfo | null;
+  // 批量任务分组：同一次批量提交的报告共享同一 batch_id
+  batch_id?: string | null;
   created_at?: string | null;
 }
 
@@ -78,4 +80,44 @@ export const TYPE_LABEL: Record<string, string> = {
   daily: "日报",
   weekly: "周报",
   monthly: "月报",
+};
+
+/* ================= 定时任务（任务书 §2.2 目标 1）================= */
+
+export interface ScheduleInfo {
+  id: number;
+  name: string;
+  instruction: string;
+  cron: string;          // 标准 5 段 cron：分 时 日 月 周
+  enabled: boolean;
+  last_run_at?: string | null;
+  run_count: number;
+  owner?: UserInfo | null;
+  created_at?: string | null;
+}
+
+// 常用 cron 预设，降低填写门槛
+export const CRON_PRESETS: { label: string; cron: string }[] = [
+  { label: "每天 09:00", cron: "0 9 * * *" },
+  { label: "每天 18:00", cron: "0 18 * * *" },
+  { label: "每周一 09:00", cron: "0 9 * * 1" },
+  { label: "每月 1 号 09:00", cron: "0 9 1 * *" },
+];
+
+/* ================= 修改意见（任务书 §2.2 目标 4）================= */
+
+export interface FeedbackInfo {
+  id: number;
+  report_id: number;
+  category: string;
+  content: string;
+  author?: UserInfo | null;
+  created_at?: string | null;
+}
+
+export const FEEDBACK_LABEL: Record<string, string> = {
+  metric: "指标数值",
+  conclusion: "结论表述",
+  format: "格式排版",
+  other: "其他",
 };

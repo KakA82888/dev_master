@@ -1,7 +1,14 @@
 // 页面：Login / Workbench / History + App 外壳与 hash 路由
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReportDetail, ReportSummary, UserInfo } from "./types";
-import { TYPE_LABEL, STATUS_LABEL, isGateBlocked, failureTitle, isAdmin } from "./types";
+import type { ReportDetail, ReportSummary, ScheduleInfo, UserInfo } from "./types";
+import {
+  TYPE_LABEL,
+  STATUS_LABEL,
+  isGateBlocked,
+  failureTitle,
+  isAdmin,
+  CRON_PRESETS,
+} from "./types";
 import { api, ApiError, getUsername, humanTime, setSession, clearSession } from "./api";
 import { toast, StatusBadge, EmptyState, SkeletonLines, Spinner } from "./ui";
 import { ReportViewer, ReportActions } from "./report";
@@ -128,6 +135,9 @@ export function AppShell({
             <a className={route === "history" ? "active" : ""} onClick={() => onRoute("history")}>
               历史报告
             </a>
+            <a className={route === "schedules" ? "active" : ""} onClick={() => onRoute("schedules")}>
+              定时任务
+            </a>
           </nav>
           <div className="spacer" />
           <span className="user-chip">
@@ -170,6 +180,8 @@ export function WorkbenchPage({
   const [recent, setRecent] = useState<ReportSummary[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(true);
   const [submitBusy, setSubmitBusy] = useState(false);
+  // 批量模式：textarea 每行一条指令（任务书 §2.2 目标 1「支持批量任务」）
+  const [batchMode, setBatchMode] = useState(false);
   const timer = useRef<number | null>(null);
   const GENERATING_KEY = "wb_report_generating_id";
 
@@ -260,6 +272,30 @@ export function WorkbenchPage({
   async function submit() {
     const text = instruction.trim();
     if (!text || submitBusy) return;
+
+    // 批量任务：每行一条指令，一次提交多张报表（任务书 §2.2 目标 1）
+    if (batchMode) {
+      const lines = text.split("\n").map((s) => s.trim()).filter(Boolean);
+      if (lines.length === 0) return;
+      if (lines.length > 20) {
+        toast.error("单次批量最多 20 条指令");
+        return;
+      }
+      setSubmitBusy(true);
+      try {
+        const res = await api.generateBatch(lines);
+        toast.info(`已提交 ${res.total} 条指令，正在批量生成…`);
+        setInstruction("");
+        setCurrent(null);
+        loadRecent();
+      } catch (e) {
+        toast.error(e instanceof ApiError ? e.message : "批量提交失败");
+      } finally {
+        setSubmitBusy(false);
+      }
+      return;
+    }
+
     setSubmitBusy(true);
     try {
       const rep = await api.generate(text);
@@ -290,23 +326,38 @@ export function WorkbenchPage({
             <h2 className="card-title">下达指令</h2>
             <textarea
               className="textarea"
-              rows={2}
+              rows={batchMode ? 5 : 2}
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                // 批量模式下 Enter 用于换行，避免误提交
+                if (e.key === "Enter" && !e.shiftKey && !batchMode) {
                   e.preventDefault();
                   submit();
                 }
               }}
-              placeholder="输入指令，例如：生成上周德国周报 / 2010年11月22日到28日的日报"
+              placeholder={
+                batchMode
+                  ? "每行一条指令，例如：\n生成昨日日报\n生成上周德国周报\n生成本月月报"
+                  : "输入指令，例如：生成上周德国周报 / 2010年11月22日到28日的日报"
+              }
               aria-label="报表生成指令"
             />
             <div className="row-flex" style={{ marginTop: 8 }}>
               <button className="btn btn-primary" disabled={submitBusy || !instruction.trim()} onClick={submit}>
-                {submitBusy ? <Spinner size={14} /> : "生成报告"}
+                {submitBusy ? <Spinner size={14} /> : batchMode ? "批量生成" : "生成报告"}
               </button>
-              <span className="muted small">Enter 提交 · Shift+Enter 换行</span>
+              <label className="muted small" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={batchMode}
+                  onChange={(e) => setBatchMode(e.target.checked)}
+                />
+                批量模式（每行一条，最多 20 条）
+              </label>
+              <span className="muted small">
+                {batchMode ? "Shift+Enter 换行" : "Enter 提交 · Shift+Enter 换行"}
+              </span>
             </div>
             <div className="chips">
               {EXAMPLES.map((ex) => (
@@ -504,6 +555,166 @@ export function HistoryPage({
             <p className="muted small" style={{ marginTop: 10 }}>
               共 {filtered.length} 条{list.length > 200 ? "（仅显示最近 200 条）" : ""}
             </p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ================= 定时任务（任务书 §2.2 目标 1「支持定时任务」）================= */
+export function SchedulesPage() {
+  const [list, setList] = useState<ScheduleInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [name, setName] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [cron, setCron] = useState(CRON_PRESETS[0].cron);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setList(await api.listSchedules());
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "加载定时任务失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const submit = async () => {
+    setError("");
+    if (!name.trim() || !instruction.trim() || !cron.trim()) {
+      setError("任务名称、报表指令与 cron 均为必填");
+      return;
+    }
+    try {
+      await api.createSchedule({
+        name: name.trim(),
+        instruction: instruction.trim(),
+        cron: cron.trim(),
+        enabled: true,
+      });
+      toast.success("定时任务已创建");
+      setName("");
+      setInstruction("");
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "创建失败");
+    }
+  };
+
+  const act = async (id: number, fn: () => Promise<unknown>, msg: string) => {
+    setBusy(id);
+    try {
+      await fn();
+      toast.success(msg);
+      load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "操作失败");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="page">
+      <section className="card">
+        <h2 className="card-title">定时任务</h2>
+        <p className="muted small">
+          按 cron 计划自动生成报表并入库（对应任务书 §2.2 目标 1「支持定时任务」）。
+        </p>
+
+        <div className="filter-row" style={{ marginTop: 12 }}>
+          <input
+            className="input"
+            style={{ minWidth: 150 }}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="任务名称"
+            aria-label="任务名称"
+          />
+          <input
+            className="input"
+            style={{ flex: 1, minWidth: 220 }}
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder="报表指令，如「生成昨日日报」"
+            aria-label="报表指令"
+          />
+          <select
+            className="input"
+            value={cron}
+            onChange={(e) => setCron(e.target.value)}
+            aria-label="cron 计划"
+          >
+            {CRON_PRESETS.map((p) => (
+              <option key={p.cron} value={p.cron}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <button className="btn btn-primary" onClick={submit}>
+            新增任务
+          </button>
+        </div>
+        {error && (
+          <p className="field-error" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="muted small">cron 为 5 段格式：分 时 日 月 周（如 0 9 * * * 表示每天 09:00）。</p>
+
+        {loading ? (
+          <SkeletonLines lines={4} />
+        ) : list.length === 0 ? (
+          <EmptyState icon="⏰" text="还没有定时任务" />
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            {list.map((s) => (
+              <div key={s.id} className="list-item" style={{ cursor: "default" }}>
+                <div className="list-main">
+                  <div className="list-title">{s.name}</div>
+                  <div className="list-sub">
+                    <code>{s.cron}</code> · {s.instruction} ·{" "}
+                    <strong>{s.enabled ? "已启用" : "已停用"}</strong> · 已执行 {s.run_count} 次
+                    {s.last_run_at ? ` · 上次 ${humanTime(s.last_run_at)}` : ""}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-sm"
+                  disabled={busy === s.id}
+                  onClick={() => act(s.id, () => api.runSchedule(s.id), "已触发一次生成，请到历史报告查看")}
+                >
+                  立即执行
+                </button>
+                <button
+                  className="btn btn-sm"
+                  disabled={busy === s.id}
+                  onClick={() =>
+                    act(
+                      s.id,
+                      () => api.updateSchedule(s.id, { enabled: !s.enabled }),
+                      s.enabled ? "已停用" : "已启用",
+                    )
+                  }
+                >
+                  {s.enabled ? "停用" : "启用"}
+                </button>
+                <button
+                  className="btn btn-sm btn-danger"
+                  disabled={busy === s.id}
+                  onClick={() => act(s.id, () => api.deleteSchedule(s.id), "已删除")}
+                >
+                  删除
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </section>

@@ -166,6 +166,8 @@ python scripts/eval/eval_metrics.py --runs 10
 
 > 改 `guard.py` 后**必须重启服务**才生效（Python 模块进程内缓存）。
 
+**定时任务**：调度器（`app/backend/scheduler.py`，APScheduler `BackgroundScheduler`）随服务 lifespan 启动，自动加载 `schedules` 表中已启用的任务；通过界面或 `/api/schedules` 的新增 / 修改 / 启停 / 删除会**实时同步**到调度器，无需重启服务。`POST /api/schedules/{id}/run` 可立即执行一次用于验证。
+
 ## 10. 运维命令速查
 
 ```bash

@@ -27,6 +27,9 @@ _TEST_DB = Path(__file__).resolve().parent / "data" / "processed" / "app_test.db
 if _TEST_DB.exists():
     con = sqlite3.connect(str(_TEST_DB))
     try:
+        # 先删依赖表，再删主表（SQLite 默认不强制外键，顺序仅为语义清晰）
+        con.execute("DROP TABLE IF EXISTS feedback")
+        con.execute("DROP TABLE IF EXISTS schedules")
         con.execute("DROP TABLE IF EXISTS reports")
         con.execute("DROP TABLE IF EXISTS users")
         con.commit()

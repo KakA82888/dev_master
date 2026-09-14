@@ -1,5 +1,6 @@
-"""报告路由：生成、预览、确认回写、归档、历史、删除、导出(Markdown/Word)。"""
+"""报告路由：生成（含批量）、预览、确认回写、归档、历史、删除、导出、修改意见。"""
 import os
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -12,12 +13,22 @@ from ..exporters import export_docx, export_markdown, sanitize_filename
 from ..generator import run_generation
 from ..models import (
     ROLE_ADMIN,
+    Feedback,
     Report,
     STATUS_ARCHIVED,
     STATUS_CONFIRMED,
     STATUS_DRAFTED,
 )
-from ..schemas import CurrentUser, ReportGenerateRequest, ReportOut, ReportSummary
+from ..schemas import (
+    BatchGenerateRequest,
+    BatchGenerateResponse,
+    CurrentUser,
+    FeedbackCreate,
+    FeedbackOut,
+    ReportGenerateRequest,
+    ReportOut,
+    ReportSummary,
+)
 from ..security import get_current_user
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -65,6 +76,35 @@ def generate(
     else:
         bg.add_task(run_generation, rep.id)
     return rep
+
+
+@router.post("/generate/batch", response_model=BatchGenerateResponse)
+def generate_batch(
+    body: BatchGenerateRequest,
+    bg: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """批量任务：一次提交多条指令，各自生成一份报告（任务书 §2.2 目标 1「支持批量任务」）。
+
+    所有报告共享同一 `batch_id`，便于在列表中按批次分组查看。
+    """
+    batch_id = str(uuid.uuid4())
+    report_ids: list[int] = []
+    for ins in body.instructions:
+        rep = Report(
+            user_id=current_user.id,
+            instruction=ins,
+            status="pending",
+            batch_id=batch_id,
+        )
+        db.add(rep)
+        db.flush()  # 立即取回自增 id，保证顺序稳定
+        report_ids.append(rep.id)
+    db.commit()
+    for rid in report_ids:
+        bg.add_task(run_generation, rid)
+    return BatchGenerateResponse(batch_id=batch_id, report_ids=report_ids, total=len(report_ids))
 
 
 @router.get("", response_model=list[ReportSummary])
@@ -183,4 +223,45 @@ def export_report(
         content=data,
         media_type=media_type,
         headers={"Content-Disposition": disposition},
+    )
+
+
+# ---------------- 修改意见（任务书 §2.2 目标 4：修改意见沉淀用于优化生成模板）----------------
+
+
+@router.post("/{report_id}/feedback", response_model=FeedbackOut,
+             status_code=status.HTTP_201_CREATED)
+def create_feedback(
+    report_id: int,
+    body: FeedbackCreate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """对某份报告提交修改意见（指标数值 / 结论表述 / 格式排版 / 其他）。"""
+    rep = _get_owned(report_id, db, current_user)
+    fb = Feedback(
+        report_id=rep.id,
+        user_id=current_user.id,
+        category=body.category,
+        content=body.content.strip(),
+    )
+    db.add(fb)
+    db.commit()
+    db.refresh(fb)
+    return fb
+
+
+@router.get("/{report_id}/feedback", response_model=list[FeedbackOut])
+def list_feedback(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """某份报告的修改意见列表。"""
+    rep = _get_owned(report_id, db, current_user)
+    return (
+        db.query(Feedback)
+        .filter(Feedback.report_id == rep.id)
+        .order_by(desc(Feedback.created_at))
+        .all()
     )

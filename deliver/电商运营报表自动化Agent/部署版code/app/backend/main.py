@@ -15,8 +15,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import SEED_PASSWORD, SEED_USERNAME
 from .db import SessionLocal, engine, init_db
+from . import scheduler
 from .models import ROLE_ADMIN, User
-from .routers import auth, reports
+from .routers import auth, feedback, reports, schedules
 from .security import hash_password
 
 
@@ -33,6 +34,9 @@ def _ensure_columns() -> bool:
         rep_cols = {row[1] for row in con.exec_driver_sql("PRAGMA table_info(reports)")}
         if rep_cols and "error_code" not in rep_cols:
             con.exec_driver_sql("ALTER TABLE reports ADD COLUMN error_code VARCHAR(32)")
+        if rep_cols and "batch_id" not in rep_cols:
+            # 批量任务分组列（任务书 §2.2 目标 1）
+            con.exec_driver_sql("ALTER TABLE reports ADD COLUMN batch_id VARCHAR(36)")
         user_cols = {row[1] for row in con.exec_driver_sql("PRAGMA table_info(users)")}
         if user_cols and "role" not in user_cols:
             # 历史用户统一回填为普通用户；种子账号由下方启动逻辑提升为 admin
@@ -64,7 +68,13 @@ async def lifespan(app: FastAPI):
                 db.commit()
     finally:
         db.close()
-    yield
+
+    # 启动定时任务调度器（任务书 §2.2 目标 1「支持定时任务」/ §3.2「定时调度器」）
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
 
 
 app = FastAPI(title="电商运营报表自动化 Agent", version="0.1.0", lifespan=lifespan)
@@ -89,6 +99,8 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(reports.router)
+app.include_router(schedules.router)
+app.include_router(feedback.router)
 
 
 @app.get("/api/health")

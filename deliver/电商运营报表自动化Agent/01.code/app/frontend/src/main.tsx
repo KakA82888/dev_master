@@ -6,11 +6,13 @@ import "./styles.css";
 import { api, getToken } from "./api";
 import type { UserInfo } from "./types";
 import { ToastHost } from "./ui";
-import { AppShell, HistoryPage, LoginPage, WorkbenchPage } from "./pages";
+import { AppShell, HistoryPage, LoginPage, SchedulesPage, WorkbenchPage } from "./pages";
 
 function readHash(): string {
   const h = window.location.hash.replace(/^#\/?/, "");
-  return h.startsWith("history") ? "history" : "workbench";
+  if (h.startsWith("history")) return "history";
+  if (h.startsWith("schedules")) return "schedules";
+  return "workbench";
 }
 
 function App() {
@@ -20,7 +22,8 @@ function App() {
   const [me, setMe] = useState<UserInfo | null>(null);
 
   useEffect(() => {
-    window.location.hash = route === "history" ? "#/history" : "#/workbench";
+    window.location.hash =
+      route === "history" ? "#/history" : route === "schedules" ? "#/schedules" : "#/workbench";
   }, [route]);
 
   // 已登录时拉取当前用户信息（含角色），用于控制管理员入口的展示
@@ -79,6 +82,8 @@ function App() {
               setRoute("workbench");
             }}
           />
+        ) : route === "schedules" ? (
+          <SchedulesPage />
         ) : (
           <WorkbenchPage
             initialReportId={pendingReportId}

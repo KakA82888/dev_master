@@ -23,9 +23,12 @@ bcrypt==4.0.1             # 实际哈希算法（passlib 后端）
 openai==3.8.0             # OpenAI 兼容客户端（LLM 通道，接 SiliconFlow 等）
 langgraph==1.2.11         # 状态机编排：plan → execute → reflect → build
 
+# ---------- 定时调度 ----------
+APScheduler==3.11.3       # 定时报表任务调度（任务书 §2.2 目标 1 / §3.2「定时调度器」）
+
 # ---------- 报告导出 ----------
 python-docx==1.2.0        # Word(.docx) 结构化渲染导出
 
 # ---------- 测试与评测 ----------
-pytest==9.1.1             # 单元 / 集成测试（26 passed）
+pytest==9.1.1             # 单元 / 集成测试
 httpx==0.28.1             # 后端 HTTP 冒烟脚本 smoke_http.py 使用

@@ -178,3 +178,124 @@ def test_admin_can_access_all_reports(client, auth_headers):
     g = client.get(f"/api/reports/{rid}", headers=admin_h)
     assert g.status_code == 200
     assert g.json()["owner"]["username"] == "alice"
+
+
+# ---------------- 批量任务 / 定时任务 / 修改意见（G1 + G2）----------------
+
+
+def test_batch_generate(client, auth_headers):
+    """批量任务：一次提交多条指令，报告共享同一 batch_id。"""
+    import time
+
+    r = client.post(
+        "/api/reports/generate/batch",
+        json={"instructions": ["生成昨日日报", "上周全市场周报", "生成本月月报"]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 3 and len(body["report_ids"]) == 3
+
+    for _ in range(160):
+        rows = client.get("/api/reports", params={"limit": 10}, headers=auth_headers).json()
+        if len(rows) == 3 and all(x["status"] not in ("pending", "running") for x in rows):
+            break
+        time.sleep(0.5)
+
+    rows = client.get("/api/reports", params={"limit": 10}, headers=auth_headers).json()
+    assert len(rows) == 3
+    assert {x["batch_id"] for x in rows} == {body["batch_id"]}
+
+
+def test_batch_rejects_empty(client, auth_headers):
+    r = client.post("/api/reports/generate/batch", json={"instructions": []}, headers=auth_headers)
+    assert r.status_code == 422
+
+
+def test_schedule_crud_and_run(client, auth_headers):
+    """定时任务：创建 → 列表 → 立即执行 → 停用 → 删除。"""
+    r = client.post(
+        "/api/schedules",
+        json={"name": "每日早报", "instruction": "生成昨日日报", "cron": "0 9 * * *", "enabled": True},
+        headers=auth_headers,
+    )
+    assert r.status_code == 201, r.text
+    sid = r.json()["id"]
+    assert r.json()["enabled"] is True
+
+    assert any(x["id"] == sid for x in client.get("/api/schedules", headers=auth_headers).json())
+
+    # 非法 cron → 400
+    bad = client.post(
+        "/api/schedules",
+        json={"name": "坏任务", "instruction": "生成昨日日报", "cron": "not-a-cron"},
+        headers=auth_headers,
+    )
+    assert bad.status_code == 400
+
+    # 立即执行一次 → 新增一份报告，run_count 自增
+    before = len(client.get("/api/reports", params={"limit": 50}, headers=auth_headers).json())
+    run = client.post(f"/api/schedules/{sid}/run", headers=auth_headers)
+    assert run.status_code == 200, run.text
+    assert run.json()["run_count"] == 1
+    assert run.json()["last_run_at"] is not None
+    after = len(client.get("/api/reports", params={"limit": 50}, headers=auth_headers).json())
+    assert after == before + 1
+
+    # 停用 / 删除
+    p = client.patch(f"/api/schedules/{sid}", json={"enabled": False}, headers=auth_headers)
+    assert p.status_code == 200 and p.json()["enabled"] is False
+    assert client.delete(f"/api/schedules/{sid}", headers=auth_headers).status_code == 204
+    assert all(x["id"] != sid for x in client.get("/api/schedules", headers=auth_headers).json())
+
+
+def test_schedule_isolation(client, auth_headers):
+    """定时任务归属隔离：他人不可见、不可执行。"""
+    r = client.post(
+        "/api/schedules",
+        json={"name": "私有任务", "instruction": "生成昨日日报", "cron": "0 9 * * *"},
+        headers=auth_headers,
+    )
+    sid = r.json()["id"]
+    other = client.post(
+        "/api/auth/register", json={"username": "eve2", "password": "pw123456"}
+    ).json()["access_token"]
+    oh = {"Authorization": f"Bearer {other}"}
+    assert client.post(f"/api/schedules/{sid}/run", headers=oh).status_code == 404
+    assert all(x["id"] != sid for x in client.get("/api/schedules", headers=oh).json())
+
+
+def test_feedback_flow(client, auth_headers):
+    """修改意见：提交 → 列表 → 汇总。"""
+    r = client.post(
+        "/api/reports/generate", params={"sync": True},
+        json={"instruction": "生成昨日日报"}, headers=auth_headers,
+    )
+    rid = r.json()["id"]
+    c = client.post(
+        f"/api/reports/{rid}/feedback",
+        json={"category": "conclusion", "content": "结论部分希望更简洁"},
+        headers=auth_headers,
+    )
+    assert c.status_code == 201, c.text
+    assert c.json()["category"] == "conclusion"
+
+    assert len(client.get(f"/api/reports/{rid}/feedback", headers=auth_headers).json()) == 1
+
+    s = client.get("/api/feedback/summary", headers=auth_headers).json()
+    assert s["total"] >= 1
+    assert any(x["category"] == "conclusion" and x["count"] >= 1 for x in s["by_category"])
+
+
+def test_feedback_invalid_category(client, auth_headers):
+    r = client.post(
+        "/api/reports/generate", params={"sync": True},
+        json={"instruction": "生成昨日日报"}, headers=auth_headers,
+    )
+    rid = r.json()["id"]
+    bad = client.post(
+        f"/api/reports/{rid}/feedback",
+        json={"category": "nonsense", "content": "x"},
+        headers=auth_headers,
+    )
+    assert bad.status_code == 422

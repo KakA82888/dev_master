@@ -1,5 +1,11 @@
 // 后端 API 客户端（fetch 封装）。401 统一抛出，由页面层回登录。
-import type { ReportDetail, ReportSummary, UserInfo } from "./types";
+import type {
+  FeedbackInfo,
+  ReportDetail,
+  ReportSummary,
+  ScheduleInfo,
+  UserInfo,
+} from "./types";
 
 const TOKEN_KEY = "ra_token";
 const USER_KEY = "ra_user";
@@ -79,6 +85,32 @@ export const api = {
   getReport: (id: number) => http<ReportDetail>(`/api/reports/${id}`),
   listReports: (limit = 50, scope: "self" | "all" = "self") =>
     http<ReportSummary[]>(`/api/reports?limit=${limit}&scope=${scope}`),
+  // 批量任务：一次提交多条指令（任务书 §2.2 目标 1）
+  generateBatch: (instructions: string[]) =>
+    http<{ batch_id: string; report_ids: number[]; total: number }>(
+      "/api/reports/generate/batch",
+      { method: "POST", body: JSON.stringify({ instructions }) },
+    ),
+
+  // 修改意见（任务书 §2.2 目标 4：修改意见沉淀用于优化生成模板）
+  createFeedback: (reportId: number, category: string, content: string) =>
+    http<FeedbackInfo>(`/api/reports/${reportId}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ category, content }),
+    }),
+  listFeedback: (reportId: number) =>
+    http<FeedbackInfo[]>(`/api/reports/${reportId}/feedback`),
+
+  // 定时任务（任务书 §2.2 目标 1 / §3.2「定时调度器」）
+  listSchedules: () => http<ScheduleInfo[]>("/api/schedules"),
+  createSchedule: (body: { name: string; instruction: string; cron: string; enabled: boolean }) =>
+    http<ScheduleInfo>("/api/schedules", { method: "POST", body: JSON.stringify(body) }),
+  updateSchedule: (
+    id: number,
+    body: Partial<{ name: string; instruction: string; cron: string; enabled: boolean }>,
+  ) => http<ScheduleInfo>(`/api/schedules/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteSchedule: (id: number) => http<void>(`/api/schedules/${id}`, { method: "DELETE" }),
+  runSchedule: (id: number) => http<ScheduleInfo>(`/api/schedules/${id}/run`, { method: "POST" }),
   confirm: (id: number) =>
     http<ReportDetail>(`/api/reports/${id}/confirm`, { method: "POST" }),
   archive: (id: number) =>

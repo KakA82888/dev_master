@@ -1,5 +1,6 @@
 // 通用 UI 组件：Toast（事件总线）、StatusBadge、Modal、Empty、Skeleton
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type { ReportStatus } from "./types";
 import { STATUS_LABEL } from "./types";
 
@@ -69,15 +70,18 @@ export function Modal({
   danger = false,
   onOk,
   onCancel,
+  children,
 }: {
   title: string;
-  body: string;
+  /** 简单文本内容；需要表单等复杂内容时改用 children */
+  body?: string;
   open: boolean;
   okText?: string;
   cancelText?: string;
   danger?: boolean;
   onOk: () => void;
   onCancel: () => void;
+  children?: ReactNode;
 }) {
   if (!open) return null;
   return (
@@ -90,7 +94,8 @@ export function Modal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3>{title}</h3>
-        <p>{body}</p>
+        {body ? <p>{body}</p> : null}
+        {children}
         <div className="modal-actions">
           <button className="btn btn-secondary" onClick={onCancel}>
             {cancelText}

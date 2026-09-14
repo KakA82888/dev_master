@@ -1,5 +1,5 @@
-"""ORM 模型：用户、报告记录。"""
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+"""ORM 模型：用户、报告、修改意见、定时任务。"""
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -16,6 +16,12 @@ STATUS_FAILED = "failed"
 # 角色（对应任务书 §6.2「按角色控制数据访问权限」）
 ROLE_ADMIN = "admin"   # 可查看与管理全部用户的报告
 ROLE_USER = "user"     # 仅可访问自己的报告
+
+# 修改意见分类（对应任务书 §2.2 目标 4：修改意见沉淀用于优化生成模板）
+FEEDBACK_METRIC = "metric"          # 指标数值问题
+FEEDBACK_CONCLUSION = "conclusion"  # 结论/表述问题
+FEEDBACK_FORMAT = "format"          # 格式/排版问题
+FEEDBACK_OTHER = "other"
 
 
 class User(Base):
@@ -51,6 +57,42 @@ class Report(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    # 批量任务分组：同一次批量提交（POST /generate/batch）产生的报告共享同一 batch_id
+    batch_id = Column(String(36), nullable=True, index=True)
 
     # 归属用户：列表/详情接口需带出 owner，供管理员视角区分报告归属
+    owner = relationship("User", lazy="joined")
+
+
+class Feedback(Base):
+    """报告修改意见（任务书 §2.2 目标 4：修改意见沉淀用于优化生成模板）。"""
+
+    __tablename__ = "feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(Integer, ForeignKey("reports.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    category = Column(String(16), default=FEEDBACK_OTHER, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    report = relationship("Report", lazy="joined")
+    author = relationship("User", lazy="joined")
+
+
+class Schedule(Base):
+    """定时报表任务（任务书 §2.2 目标 1「支持定时任务」+ §3.2「定时调度器」）。"""
+
+    __tablename__ = "schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    name = Column(String(64), nullable=False)
+    instruction = Column(String(512), nullable=False)
+    cron = Column(String(64), nullable=False)          # 标准 5 段 cron：分 时 日 月 周
+    enabled = Column(Boolean, default=True, nullable=False)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    run_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
     owner = relationship("User", lazy="joined")
